@@ -2,10 +2,10 @@
   "schemaVersion": 1,
   "id": "io.github.qempexe.omatravel",
   "name": "Omatravel",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "author": "qempexe",
   "license": "MIT",
-  "description": "Track visited countries and cities with multiple profiles, themes, a chronological travel path, and a zoom-banded GPU globe atlas.",
+  "description": "Track visited countries and cities with multiple profiles, themes, a chronological travel path, stats, time travel, export and a zoom-banded GPU globe atlas.",
   "kinds": [
     "bar-widget"
   ],

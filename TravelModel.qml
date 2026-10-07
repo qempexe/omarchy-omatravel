@@ -36,6 +36,7 @@ Item {
     property string themeDebug: "reader has not run yet"
     property var systemTheme: null          // live Omarchy colours, or null if unavailable
     property string _lastText: ""
+    property int viewYear: 0                // 0 = all trips; otherwise show the map as of the end of that year
 
     // ── derived ───────────────────────────────────────────────────────────────
     readonly property int    countryCount: Model.countryCount(store)
@@ -51,8 +52,11 @@ Item {
     readonly property color  themeBackground: Model.themeFor(store, systemTheme).background
     readonly property var    display:      Model.display(store)
     readonly property string displayIcon:  Model.display(store).icon
-    readonly property var    globePoints:  _buildGlobePoints()
+    readonly property var    allPoints:    _buildGlobePoints()
+    readonly property var    globePoints:  Model.filterByYear(allPoints, viewYear)
     readonly property var    pathPoints:   _buildPath(globePoints)
+    readonly property var    years:        Model.visitYears(store)
+    readonly property var    stats:        Model.computeStats(store, _buildPath(allPoints))
 
     function themeColor(name) { return Model.themeColor(name, systemTheme) }
     function countrySuggestions(prefix) { return Model.countrySuggestions(prefix, 6) }
@@ -190,6 +194,22 @@ Item {
         return true
     }
 
+    // A wishlist place you have now been to: it moves to your visited cities (add a date afterwards
+    // by adding the city again with one).
+    function markVisited(country, city) {
+        _commit(function(s) {
+            var p = s.profiles[s.activeProfile]
+            var wl = p.wishlist[country]
+            if (wl) {
+                p.wishlist[country] = wl.filter(function(c) { return c !== city })
+                if (p.wishlist[country].length === 0) delete p.wishlist[country]
+            }
+            if (!p.countries[country]) p.countries[country] = { cities: [], city_meta: {} }
+            if (p.countries[country].cities.indexOf(city) === -1) p.countries[country].cities.push(city)
+        })
+        _say(city + " moved to your visited cities.")
+    }
+
     function removeWishlist(country, city) {
         _commit(function(s) {
             var wl = s.profiles[s.activeProfile].wishlist
@@ -221,6 +241,22 @@ Item {
         _commit(function(s) { if (s.profiles[name]) s.activeProfile = name })
     }
 
+    function setViewYear(y) { viewYear = (y > 0 && years.indexOf(y) !== -1) ? y : 0 }
+
+    // ── export ────────────────────────────────────────────────────────────────
+    // Writes the active profile to <data dir>/exports/. kind = "csv" | "json".
+    function exportData(kind) {
+        var stamp = new Date().toISOString().slice(0, 10)
+        var text = kind === "json" ? Model.toJson(store, stamp) : Model.toCsv(store, allPoints)
+        var file = dataDir + "/exports/omatravel-" + Model.fileSafe(store.activeProfile)
+                   + "-" + stamp + (kind === "json" ? ".json" : ".csv")
+        exporter.target = file
+        exporter.command = ["sh", "-c", "mkdir -p \"$1\" && printf %s \"$2\" > \"$3\"",
+                            "sh", dataDir + "/exports", text, file]
+        exporter.running = false
+        exporter.running = true
+    }
+
     function setTheme(name) { _commit(function(s) { s.theme = name }) }
 
     function setIcon(icon) {
@@ -235,12 +271,14 @@ Item {
     }
 
     // Map position of one of the user's cities, or null if it has no pin.
-    function pointFor(country, city) {
-        var pts = globePoints
+    function pointFor(country, city, kind) {
+        var pts = allPoints, want = kind || "visited"
         for (var i = 0; i < pts.length; i++)
-            if (pts[i].country === country && pts[i].name === city) return pts[i]
+            if (pts[i].country === country && pts[i].name === city && pts[i].kind === want) return pts[i]
         return null
     }
+
+    function formatKm(km) { return Model.formatKm(km) }
 
     // Multi-line tooltip for the bar button.
     function tooltipText() {
@@ -473,5 +511,13 @@ Item {
         onExited: root.storeReady = true
     }
     Process { id: fallbackWriter }
+    Process {
+        id: exporter
+        property string target: ""
+        onExited: function(code) {
+            root._say(code === 0 ? "Exported to " + target.replace(Quickshell.env("HOME"), "~")
+                                 : "Export failed (exit code " + code + ").")
+        }
+    }
     Timer { id: noticeTimer; interval: 6000; onTriggered: root.notice = "" }
 }

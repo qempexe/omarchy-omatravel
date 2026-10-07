@@ -403,3 +403,180 @@ function dateKey(s) {
     var p = String(s).split("-");
     return p[0] + "-" + (p[1] || "00") + "-" + (p[2] || "00");
 }
+
+// ───────────────────────── continents ─────────────────────────
+var _CONTINENTS = {
+    "Africa": "DZ AO BJ BW BF BI CV CM CF TD KM CG CD CI DJ EG GQ ER SZ ET GA GM GH GN GW KE LS LR LY MG MW ML MR MU YT MA MZ NA NE NG RE RW SH ST SN SC SL SO ZA SS SD TZ TG TN UG EH ZM ZW",
+    "Asia": "AF AM AZ BH BD BT BN KH CN CY GE HK IN ID IR IQ IL JP JO KZ KP KR KW KG LA LB MO MY MV MN MM NP OM PK PS PH QA SA SG LK SY TW TJ TH TL TR TM AE UZ VN YE IO CX CC",
+    "Europe": "AX AL AD AT BY BE BA BG HR CZ DK EE FO FI FR DE GI GR GG VA HU IS IE IM IT JE XK LV LI LT LU MT MD MC ME NL MK NO PL PT RO RU SM RS SK SI ES SJ SE CH UA GB",
+    "North America": "AI AG AW BS BB BZ BM BQ VG CA KY CR CU CW DM DO SV GL GD GP GT HT HN JM MQ MX MS NI PA PR BL KN LC MF PM VC SX TT TC US VI",
+    "South America": "AR BO BR CL CO EC FK GF GY PY PE SR UY VE GS",
+    "Oceania": "AS AU CK FJ PF GU KI MH FM NR NC NZ NU NF MP PW PG PN WS SB TK TO TV UM VU WF",
+    "Antarctica": "AQ BV HM TF"
+};
+var CONTINENT_NAMES = ["Africa", "Antarctica", "Asia", "Europe", "North America", "Oceania", "South America"];
+
+// Territories and disputed places: they count as visited countries in the list, but not towards the
+// "x of 195" world total (193 UN members + the Holy See + Palestine).
+var _NOT_SOVEREIGN = " AX AS AI AQ AW BM BQ BV IO KY CX CC CK CW FK FO GF PF TF GI GL GP GU GG HM HK IM JE MO MQ YT MS NC NU NF MP PN PR RE BL SH MF PM SX SJ GS TK TC UM VG VI WF EH XK TW ";
+var WORLD_COUNTRIES = 195;
+
+var _continentByCode = null;
+function continentOf(country) {
+    if (!_continentByCode) {
+        _continentByCode = {};
+        for (var c in _CONTINENTS) {
+            var codes = _CONTINENTS[c].split(" ");
+            for (var i = 0; i < codes.length; i++) _continentByCode[codes[i]] = c;
+        }
+    }
+    return _continentByCode[countryCode(country)] || "";
+}
+
+function isSovereign(country) {
+    var cc = countryCode(country);
+    return !!cc && _NOT_SOVEREIGN.indexOf(" " + cc + " ") === -1;
+}
+
+// ───────────────────────── distance, stats, time filter, export ─────────────────────────
+var EARTH_KM = 6371.0088;
+
+function haversineKm(lat1, lng1, lat2, lng2) {
+    var r = Math.PI / 180;
+    var dLat = (lat2 - lat1) * r, dLng = (lng2 - lng1) * r;
+    var a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
+          + Math.cos(lat1 * r) * Math.cos(lat2 * r) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+    return 2 * EARTH_KM * Math.asin(Math.min(1, Math.sqrt(a)));
+}
+
+// Length of the travel path (chronological points with lat/lng), in km.
+function pathDistanceKm(path) {
+    var km = 0;
+    for (var i = 1; i < path.length; i++)
+        km += haversineKm(path[i - 1].lat, path[i - 1].lng, path[i].lat, path[i].lng);
+    return km;
+}
+
+function yearOf(date) {
+    var m = /^(\d{4})/.exec(String(date || ""));
+    return m ? parseInt(m[1], 10) : 0;
+}
+
+// Years that have at least one dated visit in the active profile, oldest first.
+function visitYears(store) {
+    var cs = activeProfile(store).countries, seen = {}, out = [];
+    for (var c in cs) {
+        var meta = cs[c].city_meta || {};
+        for (var city in meta) {
+            var v = visitsOf(meta[city]);
+            for (var i = 0; i < v.length; i++) {
+                var y = yearOf(v[i]);
+                if (y && !seen[y]) { seen[y] = true; out.push(y); }
+            }
+        }
+    }
+    out.sort(function(a, b) { return a - b; });
+    return out;
+}
+
+// Globe points as they looked at the end of `year` (0 = no filter): later visits drop out, and a
+// city whose every visit is later disappears. Undated cities and the wishlist always stay.
+function filterByYear(points, year) {
+    if (!year) return points;
+    var out = [];
+    for (var i = 0; i < points.length; i++) {
+        var p = points[i];
+        if (p.kind !== "visited" || !p.visits.length) { out.push(p); continue; }
+        var keep = p.visits.filter(function(d) { var y = yearOf(d); return y && y <= year; });
+        if (!keep.length) continue;
+        out.push({ lat: p.lat, lng: p.lng, name: p.name, country: p.country, kind: p.kind,
+                   visits: keep, visitCount: keep.length, date: keep[keep.length - 1] });
+    }
+    return out;
+}
+
+// Everything the Stats tab shows. `path` = chronological points with lat/lng (all years).
+function computeStats(store, path) {
+    var prof = activeProfile(store), cs = prof.countries;
+    var st = { countries: 0, sovereign: 0, worldPercent: 0, continents: [], continentCount: 0,
+               cities: 0, visits: 0, datedCities: 0, distanceKm: 0, laps: 0,
+               first: "", last: "", topCity: null, busiestYear: null, years: [] };
+    var cont = {}, perYear = {}, firstKey = "", lastKey = "";
+    for (var name in cs) {
+        st.countries++;
+        if (isSovereign(name)) st.sovereign++;
+        var ct = continentOf(name);
+        if (ct) cont[ct] = true;
+        var cd = cs[name], cities = cd.cities || [];
+        st.cities += cities.length;
+        for (var i = 0; i < cities.length; i++) {
+            var v = visitsOf((cd.city_meta || {})[cities[i]]);
+            if (!v.length) continue;
+            st.datedCities++;
+            st.visits += v.length;
+            if (!st.topCity || v.length > st.topCity.count)
+                st.topCity = { name: cities[i], country: name, count: v.length };
+            for (var j = 0; j < v.length; j++) {
+                var k = dateKey(v[j]), y = yearOf(v[j]);
+                if (!firstKey || k < firstKey) { firstKey = k; st.first = v[j]; }
+                if (!lastKey || k > lastKey) { lastKey = k; st.last = v[j]; }
+                if (y) perYear[y] = (perYear[y] || 0) + 1;
+            }
+        }
+    }
+    st.worldPercent = Math.round(st.sovereign / WORLD_COUNTRIES * 1000) / 10;
+    st.continents = CONTINENT_NAMES.filter(function(c) { return cont[c]; });
+    st.continentCount = st.continents.length;
+    st.distanceKm = Math.round(pathDistanceKm(path || []));
+    st.laps = Math.round(st.distanceKm / 40075.017 * 100) / 100;
+    for (var yr in perYear) st.years.push({ year: parseInt(yr, 10), trips: perYear[yr] });
+    st.years.sort(function(a, b) { return a.year - b.year; });
+    for (var n = 0; n < st.years.length; n++)
+        if (!st.busiestYear || st.years[n].trips > st.busiestYear.trips) st.busiestYear = st.years[n];
+    return st;
+}
+
+function formatKm(km) {
+    return String(Math.round(km)).replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " km";
+}
+
+// CSV cell: quoted when needed; a leading = + - @ is defused so spreadsheets don't run it as a formula.
+function csvCell(v) {
+    var s = String(v === undefined || v === null ? "" : v);
+    if (/^[=+\-@\t\r]/.test(s) && !/^-?\d+(\.\d+)?$/.test(s)) s = "'" + s;   // numbers stay numbers
+    return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
+
+// One row per city: country, city, status, visits ("2019;2023-08"), lat, lng. `points` supplies coordinates.
+function toCsv(store, points) {
+    var prof = activeProfile(store), where = {};
+    for (var i = 0; i < (points || []).length; i++) where[points[i].kind + "|" + points[i].country + "|" + points[i].name] = points[i];
+    var rows = [["country", "city", "status", "visits", "lat", "lng"]];
+    function row(country, city, kind, visits) {
+        var p = where[kind + "|" + country + "|" + city];
+        rows.push([country, city, kind, visits.join(";"), p ? p.lat : "", p ? p.lng : ""]);
+    }
+    var cs = prof.countries, names = Object.keys(cs).sort();
+    for (var a = 0; a < names.length; a++) {
+        var cd = cs[names[a]], cities = (cd.cities || []).slice().sort();
+        if (!cities.length) rows.push([names[a], "", "visited", "", "", ""]);
+        for (var b = 0; b < cities.length; b++) row(names[a], cities[b], "visited", visitsOf((cd.city_meta || {})[cities[b]]));
+    }
+    var wl = prof.wishlist, wn = Object.keys(wl).sort();
+    for (var c = 0; c < wn.length; c++) {
+        var wcs = wl[wn[c]].slice().sort();
+        for (var d = 0; d < wcs.length; d++) row(wn[c], wcs[d], "wishlist", []);
+    }
+    return rows.map(function(r) { return r.map(csvCell).join(","); }).join("\n") + "\n";
+}
+
+function toJson(store, exportedAt) {
+    var p = activeProfile(store);
+    return JSON.stringify({ app: "omatravel", profile: store.activeProfile, exportedAt: exportedAt || "",
+                            countries: p.countries, wishlist: p.wishlist }, null, 2) + "\n";
+}
+
+// Safe file-name part for an export ("My trips!" -> "My_trips_").
+function fileSafe(s) {
+    return String(s === undefined || s === null ? "" : s).replace(/[^A-Za-z0-9_-]+/g, "_").slice(0, 40) || "profile";
+}

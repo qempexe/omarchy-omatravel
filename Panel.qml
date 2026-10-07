@@ -69,13 +69,16 @@ Panel {
             { input: "DRAG / FLICK", action: "Spin the globe" },
             { input: "WHEEL", action: "Zoom (labels load as you zoom)" },
             { input: "CLICK CITY", action: "Prefill the add form" },
-            { input: "+ / − / ⌖", action: "Zoom in, out, recentre" }
+            { input: "+ / − / ⌖", action: "Zoom in, out, recentre" },
+            { input: "STATS · YEAR", action: "Show the map as of the end of a year" }
         ] },
         { title: "PLACES", controls: [
             { input: "CLICK COUNTRY", action: "Select it and show its cities" },
             { input: "CLICK CITY CHIP", action: "Fly to it on the globe" },
             { input: "DATE", action: "YYYY, YYYY-MM or YYYY-MM-DD adds it to the path" },
             { input: "SEARCH", action: "Filter your countries and cities" },
+            { input: "WISH ✓", action: "Move a wishlist city to visited" },
+            { input: "STATS · EXPORT", action: "Save your places as CSV or JSON" },
             { input: "ESC", action: "Close" }
         ] }
     ]
@@ -364,8 +367,10 @@ Panel {
                             anchors.verticalCenter: parent.verticalCenter
                             text: root.tm && root.tm.notice !== ""
                                   ? root.tm.notice
-                                  : "Drag to spin  ·  scroll to zoom  ·  click a city"
-                            color: root.tm && root.tm.notice !== "" ? root.accent : root.dim
+                                  : root.tm && root.tm.viewYear > 0
+                                    ? "Showing your trips up to " + root.tm.viewYear + "  ·  change it in Stats"
+                                    : "Drag to spin  ·  scroll to zoom  ·  click a city"
+                            color: root.tm && (root.tm.notice !== "" || root.tm.viewYear > 0) ? root.accent : root.dim
                             font.family: root.fontFamily
                             font.pixelSize: root.fsSub
                             elide: Text.ElideRight
@@ -407,7 +412,7 @@ Panel {
 
                     readonly property bool narrow: width < Style.space(340)
 
-                    // tabs ─ four equal outlined pills
+                    // tabs ─ five equal outlined pills
                     Item {
                         id: tabs
                         anchors.left: parent.left
@@ -427,6 +432,7 @@ Panel {
                                 model: [
                                     { key: "places",   label: "Places" },
                                     { key: "wishlist", label: "Wishlist" },
+                                    { key: "stats",    label: "Stats" },
                                     { key: "look",     label: "Look" },
                                     { key: "profiles", label: "Profiles" }
                                 ]
@@ -825,6 +831,27 @@ Panel {
                                                             font.family: root.fontFamily
                                                             font.pixelSize: root.fsSub
                                                             textFormat: Text.PlainText
+                                                            MouseArea {
+                                                                anchors.fill: parent
+                                                                cursorShape: Qt.PointingHandCursor
+                                                                onClicked: {
+                                                                    var p = root.tm.pointFor(wishRow.modelData.country, wchip.modelData, "wishlist")
+                                                                    if (p && globeLoader.item) globeLoader.item.focusOn(p.lat, p.lng, 9)
+                                                                }
+                                                            }
+                                                        }
+                                                        Text {
+                                                            text: "✓"
+                                                            color: root.wishColor
+                                                            font.pixelSize: root.fsSub
+                                                            font.bold: true
+                                                            textFormat: Text.PlainText
+                                                            MouseArea {
+                                                                anchors.fill: parent
+                                                                anchors.margins: -5
+                                                                cursorShape: Qt.PointingHandCursor
+                                                                onClicked: root.tm.markVisited(wishRow.modelData.country, wchip.modelData)
+                                                            }
                                                         }
                                                         Text {
                                                             text: "✕"
@@ -859,6 +886,237 @@ Panel {
                                 horizontalAlignment: Text.AlignHCenter
                                 wrapMode: Text.Wrap
                                 textFormat: Text.PlainText
+                            }
+                        }
+
+                        // ══ STATS ═════════════════════════════════════
+                        Flickable {
+                            anchors.fill: parent
+                            visible: root.currentTab === "stats"
+                            contentHeight: statsCol.height + Style.space(40)
+                            clip: true
+                            boundsBehavior: Flickable.StopAtBounds
+
+                            Column {
+                                id: statsCol
+                                x: Style.space(16)
+                                y: Style.space(14)
+                                width: parent.width - Style.space(32)
+                                spacing: Style.space(10)
+                                readonly property var st: root.tm ? root.tm.stats : null
+
+                                Flow {
+                                    id: tiles
+                                    width: parent.width
+                                    spacing: Style.space(8)
+                                    readonly property real tileW: Math.floor((width - spacing) / 2)
+
+                                    Repeater {
+                                        model: statsCol.st ? [
+                                            { big: statsCol.st.sovereign + " / " + 195,
+                                              small: "countries · " + statsCol.st.worldPercent + "% of the world" },
+                                            { big: statsCol.st.continentCount + " / 7",
+                                              small: "continents" },
+                                            { big: String(statsCol.st.cities),
+                                              small: "cities · " + statsCol.st.visits + " dated visits" },
+                                            { big: statsCol.st.distanceKm > 0 ? root.tm.formatKm(statsCol.st.distanceKm) : "—",
+                                              small: statsCol.st.distanceKm > 0
+                                                     ? statsCol.st.laps + "× around the Earth"
+                                                     : "needs two dated cities" }
+                                        ] : []
+                                        delegate: Rectangle {
+                                            id: tile
+                                            required property var modelData
+                                            width: tiles.tileW
+                                            height: Style.space(78)
+                                            radius: Style.space(10)
+                                            color: root.selectedFill
+                                            border.width: 1
+                                            border.color: root.faint
+                                            Column {
+                                                anchors.fill: parent
+                                                anchors.margins: Style.space(12)
+                                                spacing: Style.space(4)
+                                                Text {
+                                                    width: parent.width
+                                                    text: tile.modelData.big
+                                                    color: root.accent
+                                                    font.family: root.fontFamily
+                                                    font.pixelSize: root.fsMain + 6
+                                                    font.bold: true
+                                                    elide: Text.ElideRight
+                                                    textFormat: Text.PlainText
+                                                }
+                                                Text {
+                                                    width: parent.width
+                                                    text: tile.modelData.small
+                                                    color: root.dim
+                                                    font.family: root.fontFamily
+                                                    font.pixelSize: root.fsSub
+                                                    wrapMode: Text.Wrap
+                                                    maximumLineCount: 2
+                                                    elide: Text.ElideRight
+                                                    textFormat: Text.PlainText
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                Text {
+                                    width: parent.width
+                                    visible: !!statsCol.st && statsCol.st.continentCount > 0
+                                    text: statsCol.st ? statsCol.st.continents.join("  ·  ") : ""
+                                    color: root.fg
+                                    font.family: root.fontFamily
+                                    font.pixelSize: root.fsSub
+                                    wrapMode: Text.Wrap
+                                    textFormat: Text.PlainText
+                                }
+
+                                Item { width: 1; height: Style.space(4) }
+                                SectionLabel {
+                                    text: "Highlights"
+                                    foreground: root.fg
+                                    fontFamily: root.fontFamily
+                                    pixelSize: root.fsSub
+                                }
+                                Repeater {
+                                    model: statsCol.st ? [
+                                        { k: "First trip", v: statsCol.st.first || "—" },
+                                        { k: "Latest trip", v: statsCol.st.last || "—" },
+                                        { k: "Most visited", v: statsCol.st.topCity && statsCol.st.topCity.count > 1
+                                              ? statsCol.st.topCity.name + " ×" + statsCol.st.topCity.count : "—" },
+                                        { k: "Busiest year", v: statsCol.st.busiestYear
+                                              ? statsCol.st.busiestYear.year + " (" + statsCol.st.busiestYear.trips
+                                                + (statsCol.st.busiestYear.trips === 1 ? " visit)" : " visits)") : "—" }
+                                    ] : []
+                                    delegate: Item {
+                                        id: hlRow
+                                        required property var modelData
+                                        width: statsCol.width
+                                        height: Style.space(34)
+                                        Text {
+                                            anchors.left: parent.left
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            text: hlRow.modelData.k
+                                            color: root.dim
+                                            font.family: root.fontFamily
+                                            font.pixelSize: root.fsSub
+                                            textFormat: Text.PlainText
+                                        }
+                                        Text {
+                                            anchors.right: parent.right
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            width: parent.width * 0.62
+                                            horizontalAlignment: Text.AlignRight
+                                            text: hlRow.modelData.v
+                                            color: root.fg
+                                            font.family: root.fontFamily
+                                            font.pixelSize: root.fsMain
+                                            elide: Text.ElideRight
+                                            textFormat: Text.PlainText
+                                        }
+                                        Rectangle {
+                                            anchors.left: parent.left
+                                            anchors.right: parent.right
+                                            anchors.bottom: parent.bottom
+                                            height: 1
+                                            color: root.faint
+                                        }
+                                    }
+                                }
+
+                                Item { width: 1; height: Style.space(4) }
+                                SectionLabel {
+                                    text: "Time travel: show your trips up to…"
+                                    foreground: root.fg
+                                    fontFamily: root.fontFamily
+                                    pixelSize: root.fsSub
+                                }
+                                Flow {
+                                    width: parent.width
+                                    spacing: Style.space(6)
+                                    Repeater {
+                                        model: root.tm && root.tm.years.length > 0 ? [0].concat(root.tm.years) : []
+                                        delegate: FlatButton {
+                                            id: yearBtn
+                                            required property int modelData
+                                            text: yearBtn.modelData === 0 ? "All" : String(yearBtn.modelData)
+                                            outlined: true
+                                            selected: root.tm.viewYear === yearBtn.modelData
+                                            implicitHeight: Style.space(28)
+                                            hPad: Style.space(12)
+                                            foreground: root.fg
+                                            accent: root.accent
+                                            fontFamily: root.fontFamily
+                                            pixelSize: root.fsSub
+                                            onClicked: root.tm.setViewYear(yearBtn.modelData)
+                                        }
+                                    }
+                                }
+                                Text {
+                                    width: parent.width
+                                    visible: !root.tm || root.tm.years.length === 0
+                                    text: "Add a city with a date and the years you travelled appear here."
+                                    color: root.dim
+                                    font.family: root.fontFamily
+                                    font.pixelSize: root.fsSub
+                                    wrapMode: Text.Wrap
+                                    textFormat: Text.PlainText
+                                }
+                                Text {
+                                    width: parent.width
+                                    visible: !!root.tm && root.tm.years.length > 0
+                                    text: "The globe and travel path show your map as it stood at the end of that year. Undated cities and your wishlist always stay."
+                                    color: root.dim
+                                    font.family: root.fontFamily
+                                    font.pixelSize: root.fsSub
+                                    wrapMode: Text.Wrap
+                                    textFormat: Text.PlainText
+                                }
+
+                                Item { width: 1; height: Style.space(4) }
+                                SectionLabel {
+                                    text: "Export this profile"
+                                    foreground: root.fg
+                                    fontFamily: root.fontFamily
+                                    pixelSize: root.fsSub
+                                }
+                                Row {
+                                    spacing: Style.space(8)
+                                    FlatButton {
+                                        text: "Save as CSV"
+                                        outlined: true
+                                        implicitHeight: Style.space(32)
+                                        hPad: Style.space(16)
+                                        foreground: root.fg
+                                        accent: root.accent
+                                        fontFamily: root.fontFamily
+                                        pixelSize: root.fsSub
+                                        onClicked: root.tm.exportData("csv")
+                                    }
+                                    FlatButton {
+                                        text: "Save as JSON"
+                                        outlined: true
+                                        implicitHeight: Style.space(32)
+                                        hPad: Style.space(16)
+                                        foreground: root.fg
+                                        accent: root.accent
+                                        fontFamily: root.fontFamily
+                                        pixelSize: root.fsSub
+                                        onClicked: root.tm.exportData("json")
+                                    }
+                                }
+                                Text {
+                                    width: parent.width
+                                    text: "Files go to ~/.local/share/omatravel/exports/. CSV opens in any spreadsheet."
+                                    color: root.dim
+                                    font.family: root.fontFamily
+                                    font.pixelSize: root.fsSub
+                                    wrapMode: Text.Wrap
+                                    textFormat: Text.PlainText
+                                }
                             }
                         }
 

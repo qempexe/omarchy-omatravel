@@ -12,7 +12,10 @@ Click the globe icon in the bar to open the atlas: drag to spin the globe, zoom 
 - **City labels as you zoom**: four population bands load on demand, from cities over 500,000 people out to every place over 1,000. Click a city on the globe to prefill the add form.
 - **Places**: log countries and the cities you visited. A city can carry several dated visits (`2019`, `2019-05` or `2019-05-02`); repeat visits show as `Barcelona ×5`.
 - **Travel path**: dated visits are joined by great-circle arcs in chronological order, so a city visited twice is returned to.
-- **Wishlist**: pin places you want to visit in a second colour.
+- **Wishlist**: pin places you want to visit in a second colour. When you get there, tick **✓** next to the city and it moves to your visited places.
+- **Stats**: how many countries (and what share of the 195 world countries) and continents you have covered, the number of cities and dated visits, the total distance of your travel path in km and as laps around the Earth, your first and latest trip, your most-visited city and busiest year.
+- **Time travel**: pick a year in **Stats** and the globe and travel path show your map as it stood at the end of that year. Undated cities and the wishlist always stay visible. The footer tells you when it is active.
+- **Export**: save the active profile as **CSV** (one row per city, with status, visit dates and coordinates; opens in any spreadsheet) or as **JSON** (the full profile). Files are written to `~/.local/share/omatravel/exports/`.
 - **Profiles**: keep separate maps (for example "me" and "family"). The default profile cannot be deleted.
 - **Search**: filter your countries and cities from the header.
 - **Flags**: optional country flag emoji in the list and tooltip.
@@ -63,11 +66,14 @@ Click the globe icon, type `Spain` in the **Country** box and press **Add**, the
 | Fly to a city                   | Click its chip                                                   |
 | Log another visit               | Add the same city again with a new date                          |
 | Remove a country, city or visit | **✕** next to it                                                 |
+| Move a wishlist city to visited | **✓** next to it in **Wishlist**                                 |
+| Show the map as of a year       | **Stats** tab → pick a year under *Time travel* (**All** resets) |
+| Export the profile              | **Stats** tab → *Save as CSV* or *Save as JSON*                  |
 | Pop out / dock back             | **↗** in the header; while popped out, click the bar icon        |
 | Controls cheat-sheet            | **?** in the header                                              |
 | Close                           | `Esc` or **✕**                                                   |
 
-The sidebar has four tabs: **Places**, **Wishlist**, **Look** and **Profiles**. The "Add a place" form is docked at the bottom; flip its switch between **✓ Visited** and **♡ Wishlist** to choose where a city goes.
+The sidebar has five tabs: **Places**, **Wishlist**, **Stats**, **Look** and **Profiles**. The "Add a place" form is docked at the bottom; flip its switch between **✓ Visited** and **♡ Wishlist** to choose where a city goes.
 
 ## Settings
 
@@ -103,13 +109,14 @@ Cities are looked up by name in the bundled atlas. For a place it does not know,
 - **One palette for both variants**: the bar popup and the detached window draw the same opaque background, text and accent, so they cannot drift apart.
 - **The globe** is a fragment shader (`shaders/globe.frag`) sampling a land / border / graticule mask (`assets/earth.png`) and tinting it with the theme. Pins, arcs and labels are drawn on a canvas on top using the same projection maths (`GlobeProjection.js`).
 - **City data** is split into four zoom bands (`z0`–`z3`, by population) plus a name → coordinates index. Bands are only read from disk when you zoom far enough to need them.
+- **Stats and time travel** are computed from your saved places on every change. The distance is the great-circle length of the dated path, in order (Haversine formula, Earth radius 6,371 km).
 - **Saving** goes to a file outside the plugin folder, so Quickshell's hot-reload of the plugin directory never restarts your bar when you add a city.
 - Text from your data and from the filesystem is always drawn as plain text, never rich text.
 
 ## Data and privacy
 
-- Your places live in `~/.local/share/omatravel/travel-data.json` and nothing else is stored. An older save inside the plugin folder (`data/travel-data.json`) is copied across once.
-- The only external process it runs is `sh`, for `mkdir` and `cp` (creating the data folder and the one-off migration) and `cat`, `ls` and `find` (reading Omarchy's theme files under `~/.config/omarchy` and `~/.local/share/omarchy`). **No network access, no telemetry.**
+- Your places live in `~/.local/share/omatravel/travel-data.json`. Exports you request are written to `~/.local/share/omatravel/exports/` and nothing else is stored. An older save inside the plugin folder (`data/travel-data.json`) is copied across once.
+- The only external process it runs is `sh`, for `mkdir`, `cp` and `printf` (creating the data folder, the one-off migration and writing exports) and `cat`, `ls` and `find` (reading Omarchy's theme files under `~/.config/omarchy` and `~/.local/share/omarchy`). **No network access, no telemetry.**
 - Plugins run unsandboxed in the shell process. This one reads and writes only the files described here.
 
 ## Limitations
@@ -127,7 +134,7 @@ Cities are looked up by name in the bundled atlas. For a place it does not know,
 | `Panel.qml`                                   | The popup panel: header, sidebar tabs, add form, theming      |
 | `TravelModel.qml`                             | State, persistence, data loading, live Omarchy theme          |
 | `GlobeView.qml`                               | The globe: shader, pins, arcs, labels, zoom controls          |
-| `Model.js`                                    | Pure logic: store, countries, dates, theme parsing            |
+| `Model.js`                                    | Pure logic: store, countries, dates, theme parsing, stats, export |
 | `GlobeProjection.js`                          | Orthographic projection and great-circle maths                |
 | `DetachedWindow.qml`                          | The pop-out window                                            |
 | `FlatButton.qml`, `FieldBox.qml`, `SectionLabel.qml` | Small themed UI pieces                                 |
@@ -135,7 +142,9 @@ Cities are looked up by name in the bundled atlas. For a place it does not know,
 | `assets/earth.png`                            | Land / border / graticule mask                                |
 | `data/layers/`                                | `z0`–`z3.json` city bands and `index.json` lookup             |
 | `tools/`                                      | Build scripts for the shaders, texture and city data          |
-| `preview.png`                                 | Screenshot used in this README and the marketplace            |
+| `preview.png`                                 | Title card used in this README and the marketplace            |
+| `LICENSE`                                     | MIT licence                                                   |
+| `tests/test_model.js`                         | Unit tests for the pure logic (`node tests/test_model.js`)    |
 
 ## Development
 
@@ -143,6 +152,12 @@ Plugin files under `~/.config/omarchy/plugins/` are watched, but restart the she
 
 ```
 omarchy restart shell
+```
+
+To run the logic tests (no Qt needed):
+
+```
+node tests/test_model.js
 ```
 
 To check the manifest:
@@ -164,6 +179,10 @@ tools/build-shaders.sh     # needs qt6-shadertools (qsb)
 tools/build-texture.py     # needs python3 + pillow; downloads Natural Earth
 tools/build-layers.py      # downloads GeoNames cities1000
 ```
+
+## Updating from 1.0
+
+Nothing to migrate: the save format is unchanged. Stats, time travel and export are available straight away, and wishlist cities gain a **✓** button.
 
 ## Updating
 
