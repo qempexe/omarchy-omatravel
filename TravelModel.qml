@@ -3,7 +3,8 @@ import Quickshell
 import Quickshell.Io
 import "Model.js" as Model
 
-// State + persistence for Omatravel. Holds the store (profiles, theme, display),
+// State + persistence for Omatravel. Holds the store (profiles and places); theme and
+// display options come from the settings store (SettingsStore.qml, set by BarWidget),
 // lazily loads the city lookup index and the zoom-band layers, and derives the
 // data the bar button, the panel and the globe bind to.
 Item {
@@ -23,6 +24,21 @@ Item {
     readonly property string storePath: dataDir + "/travel-data.json"
     readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME") || (Quickshell.env("HOME") + "/.config")
     property bool storeReady: false
+
+    // ── settings (SettingsStore.qml, set by BarWidget.qml) ───────────────────
+    // The popup's own edits win, then the shell's setting() value (`fallbacks`), then the default.
+    property var settings: null
+    property var fallbacks: ({})
+    function opt(key, dflt) {
+        var o = settings ? settings.values[key] : undefined
+        if (o !== undefined) return o
+        var f = fallbacks[key]
+        return f !== undefined ? f : dflt
+    }
+    function clampInt(x, lo, hi, dflt) {
+        var n = Math.round(Number(x))
+        return isFinite(n) ? Math.max(lo, Math.min(hi, n)) : dflt
+    }
 
     // ── state ─────────────────────────────────────────────────────────────────
     property var store: Model.parseStore("")
@@ -45,13 +61,46 @@ Item {
     readonly property var    wishlist:     Model.wishlistRows(store)
     readonly property var    profileNames: Model.profileNames(store)
     readonly property string activeProfile: store.activeProfile
-    readonly property string activeTheme:   store.theme
+    readonly property bool   customTheme:   String(opt("theme", "auto")) === "custom"
+    readonly property string activeTheme:   customTheme ? "custom"
+                                            : (Model.themeNames().indexOf(String(opt("theme", "auto"))) !== -1
+                                               ? String(opt("theme", "auto")) : "auto")
     readonly property var    themeNames:    Model.themeNames()
-    readonly property color  themeAccent:     Model.themeFor(store, systemTheme).accent
-    readonly property color  themeText:       Model.themeFor(store, systemTheme).text
-    readonly property color  themeBackground: Model.themeFor(store, systemTheme).background
-    readonly property var    display:      Model.display(store)
-    readonly property string displayIcon:  Model.display(store).icon
+    function hexOr(v, dflt) {
+        var t = String(v === undefined || v === null ? "" : v).trim()
+        return /^#[0-9a-fA-F]{6}$/.test(t) ? t : dflt
+    }
+    readonly property var    _theme: customTheme
+        ? { text: hexOr(opt("customFg", "#c0caf5"), "#c0caf5"),
+            background: hexOr(opt("customBg", "#1a1b26"), "#1a1b26"),
+            accent: hexOr(opt("accentColor", "#7aa2f7"), "#7aa2f7") }
+        : Model.themeFor({ theme: activeTheme }, systemTheme)
+    readonly property color  themeAccent:     _theme.accent
+    readonly property color  themeText:       _theme.text
+    readonly property color  themeBackground: _theme.background
+    // Look and window options (Settings > Look / Window).
+    readonly property var    look: ({
+        opacity: clampInt(opt("opacity", 100), 50, 100, 100),
+        cornerRadius: clampInt(opt("cornerRadius", 12), 0, 24, 12),
+        outline: opt("outline", false) === true || opt("outline", false) === "true",
+        surfaceTint: clampInt(opt("surfaceTint", 0), 0, 30, 0),
+        fontScale: clampInt(opt("fontScale", 100), 80, 150, 100),
+        density: ["compact", "comfortable", "spacious"].indexOf(String(opt("density", "comfortable"))) !== -1
+                 ? String(opt("density", "comfortable")) : "comfortable",
+        openAs: String(opt("openAs", "panel")) === "window" ? "window" : "panel",
+        windowWidth: clampInt(opt("windowWidth", 1180), 800, 1800, 1180),
+        windowHeight: clampInt(opt("windowHeight", 760), 500, 1200, 760)
+    })
+    readonly property var    display: ({
+        icon: Model.plain(String(opt("icon", "\ud83c\udf0d")).trim().slice(0, 8)) || "\ud83c\udf0d",
+        showCounts: opt("showCounts", true) !== false,
+        showFlags: opt("showFlags", true) !== false,
+        showPath: opt("showPath", true) !== false,
+        showPlaces: opt("showPlaces", true) !== false,
+        maxTooltipCountries: clampInt(opt("maxTooltipCountries", 8), 1, 30, 8),
+        maxTooltipCities: clampInt(opt("maxTooltipCities", 10), 1, 30, 10)
+    })
+    readonly property string displayIcon:  display.icon
     readonly property var    allPoints:    _buildGlobePoints()
     readonly property var    globePoints:  Model.filterByYear(allPoints, viewYear)
     readonly property var    pathPoints:   _buildPath(globePoints)
@@ -91,6 +140,29 @@ Item {
         return null
     }
 
+    // ── private file writes ───────────────────────────────────────────────────
+    // Travel history must never appear in a process command line: argv is readable by
+    // every local user through /proc/<pid>/cmdline, whatever the file permissions are.
+    // So the content goes in on stdin, and argv only carries the target directory and file.
+    // The shell creates an owner-only temp file next to the target (mktemp is 0600 and the
+    // umask covers the directory), fills it from stdin, then renames it into place, so the
+    // target is never readable by others, not even briefly, and is never left half-written.
+    readonly property string _privateWriteScript: [
+        'umask 077',
+        'mkdir -p "$1" && chmod 700 "$1" || exit 1',
+        'tmp=$(mktemp "$1/.omatravel.XXXXXX") || exit 1',
+        'if cat > "$tmp" && chmod 600 "$tmp" && mv -f "$tmp" "$2"; then exit 0; fi',
+        'rm -f "$tmp"',
+        'exit 1'].join("\n")
+
+    function _writePrivate(proc, dir, file, text) {
+        proc.running = false
+        proc.command = ["sh", "-c", root._privateWriteScript, "sh", dir, file]
+        proc.payload = text
+        proc.stdinEnabled = true
+        proc.running = true
+    }
+
     // ── persistence ───────────────────────────────────────────────────────────
     function _commit(mutator) {
         var clone = Model.sanitize(JSON.parse(JSON.stringify(root.store)))
@@ -104,11 +176,9 @@ Item {
         root._lastText = text
         if (typeof storeFile.setText === "function") {
             storeFile.setText(text)
+            permTimer.restart()                     // setText creates the file with the default mode
         } else {                                    // very old Quickshell
-            fallbackWriter.command = ["sh", "-c",
-                "mkdir -p \"$1\" && printf %s \"$2\" > \"$3\"", "sh", root.dataDir, text, root.storePath]
-            fallbackWriter.running = false
-            fallbackWriter.running = true
+            _writePrivate(fallbackWriter, root.dataDir, root.storePath, text)
         }
     }
 
@@ -251,23 +321,30 @@ Item {
         var file = dataDir + "/exports/omatravel-" + Model.fileSafe(store.activeProfile)
                    + "-" + stamp + (kind === "json" ? ".json" : ".csv")
         exporter.target = file
-        exporter.command = ["sh", "-c", "mkdir -p \"$1\" && printf %s \"$2\" > \"$3\"",
-                            "sh", dataDir + "/exports", text, file]
-        exporter.running = false
-        exporter.running = true
+        _writePrivate(exporter, dataDir + "/exports", file, text)
     }
 
-    function setTheme(name) { _commit(function(s) { s.theme = name }) }
-
-    function setIcon(icon) {
-        _commit(function(s) { s.display.icon = Model.plain(String(icon || "").trim().slice(0, 8)) || "🌍" })
+    // Older versions kept the theme and display options inside travel-data.json. Copy any
+    // value that differs from its default into the settings store, once, so nothing is lost.
+    property bool _migrated: false
+    function migrateLegacy() {
+        if (_migrated || !settings || !settings.loaded || !storeReady) return
+        _migrated = true
+        var d = Model.display(store)
+        var pairs = [["theme", store.theme, "auto"], ["icon", d.icon, "\ud83c\udf0d"],
+                     ["showFlags", d.showFlags, true], ["showPath", d.showPath, true],
+                     ["showPlaces", d.showPlaces, true],
+                     ["maxTooltipCountries", d.maxTooltipCountries, 8],
+                     ["maxTooltipCities", d.maxTooltipCities, 10]]
+        for (var i = 0; i < pairs.length; i++)
+            if (settings.get(pairs[i][0]) === null && pairs[i][1] !== undefined && pairs[i][1] !== pairs[i][2])
+                settings.set(pairs[i][0], pairs[i][1])
     }
-
-    function setShowFlags(on) { setDisplayFlag("showFlags", on) }
-
-    function setDisplayFlag(key, on) {
-        if (["showFlags", "showPath", "showPlaces"].indexOf(key) === -1) return
-        _commit(function(s) { s.display[key] = !!on })
+    onSettingsChanged: migrateLegacy()
+    onStoreReadyChanged: migrateLegacy()
+    Connections {
+        target: root.settings
+        function onLoadedChanged() { root.migrateLegacy() }
     }
 
     // Map position of one of the user's cities, or null if it has no pin.
@@ -292,13 +369,6 @@ Item {
         if (rows.length > d.maxTooltipCountries)
             lines.push("+ " + (rows.length - d.maxTooltipCountries) + " more")
         return lines.map(function(l) { return Model.plain(l) }).join("\n")
-    }
-
-    function setTooltipLimits(cMax, cityMax) {
-        _commit(function(s) {
-            s.display.maxTooltipCountries = Math.max(1, parseInt(cMax) || 8)
-            s.display.maxTooltipCities = Math.max(1, parseInt(cityMax) || 10)
-        })
     }
 
     // ── derived data ──────────────────────────────────────────────────────────
@@ -501,17 +571,43 @@ Item {
     BandLoader { band: "z3"; wanted: root.wantedBands.z3 === true; dir: root.layerDir
                  onBandLoaded: function(b, t) { root._bandLoaded(b, t) } }
 
+    // A process that receives its content on stdin instead of argv (see _writePrivate).
+    // Once started it writes the payload, drops its own copy, and closes stdin so `cat` sees
+    // EOF; Qt flushes the buffered data before the channel actually closes.
+    component StdinWriter: Process {
+        property string payload: ""
+        stdinEnabled: false
+        onStarted: {
+            write(payload)
+            payload = ""
+            stdinEnabled = false
+        }
+        onExited: payload = ""
+    }
+
     // Create the data dir and, once, copy an old in-plugin save across; only then open the store.
     Process {
         id: ensureDir
         command: ["sh", "-c",
-            "mkdir -p \"$1\" && { [ -f \"$2\" ] || { [ -f \"$3\" ] && cp \"$3\" \"$2\"; }; }; true",
+            // Travel history is personal: owner-only data dir (and exports dir), and an
+            // owner-only store file, including one created by an older build.
+            "umask 077; mkdir -p \"$1\" && chmod 700 \"$1\" && { [ -f \"$2\" ] || { [ -f \"$3\" ] && cp \"$3\" \"$2\"; }; }; " +
+            "[ -f \"$2\" ] && chmod 600 \"$2\"; [ -d \"$1/exports\" ] && chmod 700 \"$1/exports\"; true",
             "sh", root.dataDir, root.storePath, root.legacyStorePath]
         running: true
         onExited: root.storeReady = true
     }
-    Process { id: fallbackWriter }
-    Process {
+    StdinWriter { id: fallbackWriter }
+    // FileView.setText writes with the default umask (0644 on most systems), and its atomic
+    // save may recreate the file. The 0700 data dir already keeps other users out; this
+    // brings the file itself back to 0600 after each save.
+    Process { id: permFixer; command: ["chmod", "600", root.storePath] }
+    Timer {
+        id: permTimer
+        interval: 400
+        onTriggered: { permFixer.running = false; permFixer.running = true }
+    }
+    StdinWriter {
         id: exporter
         property string target: ""
         onExited: function(code) {

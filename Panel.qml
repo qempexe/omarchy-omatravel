@@ -17,8 +17,13 @@ Panel {
     property var anchorItem: null
     property var hostWidget: null
     property var travelModel: null
+    property bool vertical: false             // the bar is on the left / right edge
 
     property string currentTab: "places"
+    readonly property var atlasLook: tm ? tm.look : ({ opacity: 100, cornerRadius: 12, outline: false, surfaceTint: 0,
+        fontScale: 100, density: "comfortable", openAs: "panel", windowWidth: 1180, windowHeight: 760 })
+    // the one inset used on every edge of the panel (Settings > Look > Spacing)
+    readonly property int gutter: atlasLook.density === "compact" ? 10 : (atlasLook.density === "spacious" ? 18 : 14)
     property string query: ""
     property bool helpVisible: false
     property string newCountry: ""
@@ -29,7 +34,7 @@ Panel {
     property string newProfile: ""
 
     // ── detach: the whole panel (`card`) can live in the bar popup or in its own window ──
-    property bool detached: false
+    property bool detached: false             // popped-out mode, kept until Dock
     // ── colours: ONE palette shared by the bar popup and the detached window ─────────
     //   named theme            -> that theme's colours
     //   "Follow Omarchy"       -> live Omarchy colours (colors.toml), re-read when the theme changes
@@ -39,24 +44,32 @@ Panel {
     readonly property bool followSystem: !!tm && tm.activeTheme === "auto" && tm.systemTheme !== null
     readonly property color fg: useBarColors && root.barForeground !== undefined
         ? root.barForeground : (tm ? tm.themeText : "#e8dcc8")
-    readonly property color panelBg: {
+    readonly property color baseBg: {
         if (useBarColors && root.barBackground !== undefined) {
             var c = root.barBackground
-            return Qt.rgba(c.r, c.g, c.b, 1)          // bar colours may be translucent; the panel never is
+            return Qt.rgba(c.r, c.g, c.b, 1)          // bar colours may be translucent; the base never is
         }
         return tm ? tm.themeBackground : Qt.rgba(0.10, 0.09, 0.08, 1)
     }
+    // Solid background with the accent washed over it (Settings > Look > Window tint).
+    readonly property color panelBg: {
+        var t = root.atlasLook.surfaceTint / 100
+        var b = root.baseBg, a = root.accent
+        return Qt.rgba(b.r + (a.r - b.r) * t, b.g + (a.g - b.g) * t, b.b + (a.b - b.b) * t, 1)
+    }
+    // What is actually painted behind the content (Settings > Look > Opacity).
+    readonly property color paintBg: Qt.rgba(panelBg.r, panelBg.g, panelBg.b, atlasLook.opacity / 100)
     // Tell the model what colour the shell is using, so it can tell which Omarchy theme is active.
     Binding { target: root.tm; property: "shellBg"; value: root.barBackground; when: !!root.tm }
 
-    property var _home: null          // the popup's content item, remembered while detached
+    property var _home: null          // the popup's content item, remembered while the card is in the window
 
     readonly property var tm: travelModel
     readonly property color accent: tm ? tm.themeAccent : "#d4a35a"
     readonly property color wishColor: "#cba6f7"
     // One consistent, compact type scale (derived from the shell body size).
-    readonly property int fsMain: Math.max(10, Math.round(Style.font.body * 0.9))
-    readonly property int fsSub:  Math.max(9,  Math.round(Style.font.body * 0.8))
+    readonly property int fsMain: Math.max(8, Math.round(Math.max(10, Style.font.body * 0.9) * atlasLook.fontScale / 100))
+    readonly property int fsSub:  Math.max(7, Math.round(Math.max(9,  Style.font.body * 0.8) * atlasLook.fontScale / 100))
 
     readonly property string fontFamily: root.bar ? root.bar.fontFamily : Style.font.family
     readonly property color dim: Qt.rgba(root.fg.r, root.fg.g, root.fg.b, 0.56)
@@ -83,35 +96,142 @@ Panel {
         ] }
     ]
 
-    onOpenedChanged: if (opened && tm) tm.ensureIndex()
+    // ── pop out / dock ─────────────────────────────────────────────────────────────
+    // `detached` is the mode the user picked with the header button, and it sticks:
+    // while popped out, the bar icon shows and hides the window (it does not dock it),
+    // and closing the window (✕, Super+Q …) just hides it until the next click.
+    // Only **Dock** goes back to the bar popup.
+    // The window exists exactly while it is wanted, so a dead window can never leave
+    // the bar icon doing nothing.
+    property bool windowRequested: false
+    property bool inWindow: false                  // the card is currently inside the window
+    readonly property bool windowShown: root.inWindow && root.windowRequested
 
-    function detach() {
-        if (root.detached) return
+    function _showWindow() {
         if (tm) tm.ensureIndex()
+        root.windowRequested = true
         detachLoader.active = true                 // DetachedWindow calls _enterWindow() once it exists
     }
 
+    function _hideWindow() {
+        root._leaveWindow()
+        root.windowRequested = false
+        detachLoader.active = false                // destroys the window
+    }
+
     function _enterWindow(win) {
-        if (root.detached || !win) return
-        root._home = card.parent
+        if (!win || root.inWindow) return
+        if (!root._home) root._home = card.parent
         card.parent = win.contentItem
+        root.inWindow = true
+    }
+
+    // The card always goes back to the popup before the window is destroyed.
+    function _leaveWindow() {
+        if (!root.inWindow) return
+        if (root._home) card.parent = root._home
+        root.inWindow = false
+    }
+
+    // The window manager closed the window: forget it, stay popped out.
+    // Until the header's Pop out / Dock is used, Settings > Window > Open as decides
+    // where the bar icon opens the atlas, so a change there takes effect at once.
+    property bool userPicked: false
+
+    function _chooseMode() {
+        if (root.userPicked) return
+        var want = root.atlasLook.openAs === "window"
+        if (want === root.detached) return
+        if (root.windowRequested) root._hideWindow()
+        if (root.opened) root.controller.hide()
+        root.detached = want
+    }
+
+    function _windowClosedByUser() {
+        if (!root.windowRequested) return
+        root._leaveWindow()
+        root.windowRequested = false
+        Qt.callLater(function() { if (!root.windowRequested) detachLoader.active = false })
+    }
+
+    // Bar -> window.
+    function detach() {
         root.detached = true
         root.helpVisible = false
+        root._wantPanel = false
+        panelCheck.stop()
         root.controller.hide()                     // close the bar popup
+        root._showWindow()
     }
 
-    // Window -> bar. `show` re-opens the popup; false just closes everything.
-    function _dock(show) {
-        if (!root.detached) return
-        if (root._home) card.parent = root._home
+    // Window -> bar. The popup is shown only once the window is really gone: with no
+    // other window on the screen, Hyprland moves focus when the window closes, and a
+    // popup opened in that same moment would lose its focus grab and close at once.
+    function dock() {
+        root._hideWindow()
         root.detached = false
-        detachLoader.active = false                // destroys the window
-        if (show) root.controller.show()
+        dockShowTimer.restart()
     }
-    function reattach() { _dock(true) }
+
+    // If the popup still has not opened shortly after docking, pop the window back out
+    // rather than leaving nothing on screen.
+    property bool _wantPanel: false
+
+    function _openPanel() {
+        root._wantPanel = true
+        root.controller.show()
+        panelCheck.restart()
+    }
+
+    onOpenedChanged: if (root.opened) {
+        if (tm) tm.ensureIndex()
+        root._wantPanel = false
+        panelCheck.stop()
+    }
+
+    Timer {
+        id: dockShowTimer
+        interval: 200
+        repeat: false
+        onTriggered: if (!root.detached && !root.opened) root._openPanel()
+    }
+
+    Timer {
+        id: panelCheck
+        interval: 600
+        repeat: false
+        onTriggered: if (root._wantPanel && !root.opened && !root.detached) {
+            root._wantPanel = false
+            console.warn("Omatravel: the docked panel did not open; showing the window instead")
+            root.detach()
+        }
+    }
+
+    // Used by BarWidget: what the bar icon does in each mode.
+    function showAtlas() {
+        root._chooseMode()
+        if (root.detached) root._showWindow()
+        else if (!root.opened && !root.recentlyClosed()) root.controller.show()
+    }
+    function toggleAtlas() {
+        root._chooseMode()
+        if (root.detached) {
+            if (root.windowShown) root._hideWindow()
+            else root._showWindow()
+        } else if (!root.recentlyClosed()) {
+            root.toggle()
+        }
+    }
+
+    // True for a moment after a click outside closed the panel, so the same click on the
+    // bar button does not open it again.
+    function recentlyClosed() { return panel.justClosed() }
 
     function open()  { root.controller.show() }
-    function close() { root.controller.hide() }
+    function close() {
+        root.controller.hide()
+        if (root.windowRequested) root._hideWindow()
+    }
     function switchPanel(direction) {
         if (root.bar && typeof root.bar.switchPanelFrom === "function")
             return root.bar.switchPanelFrom(root.hostWidget || root, direction)
@@ -161,23 +281,26 @@ Panel {
             id: dwin
             visible: true
             title: "Omatravel"
-            color: root.panelBg
-            implicitWidth: Style.space(1180)
-            implicitHeight: Style.space(760)
-            onClosedByUser: root._dock(false)
+            color: root.atlasLook.opacity < 100 ? "transparent" : root.panelBg
+            implicitWidth: Style.space(root.atlasLook.windowWidth)
+            implicitHeight: Style.space(root.atlasLook.windowHeight)
+            onClosedByUser: root._windowClosedByUser()
             Component.onCompleted: root._enterWindow(dwin)
         }
     }
 
-    KeyboardPanel {
+    PanelFrame {
         id: panel
         anchorItem: root.anchorItem
-        owner: root.hostWidget || root
-        bar: root.bar
+        barObject: root.bar
+        vertical: root.vertical
         open: root.opened
         focusTarget: keyCatcher
-        contentWidth: panel.fittedContentWidth(Style.space(1180))
-        contentHeight: panel.fittedContentHeight(Style.space(760))
+        borderColor: root.atlasLook.outline ? root.accent : Qt.rgba(root.fg.r, root.fg.g, root.fg.b, 0.14)
+        frameRadius: root.atlasLook.cornerRadius
+        wantedWidth: Style.space(root.atlasLook.windowWidth)
+        wantedHeight: Style.space(root.atlasLook.windowHeight)
+        onCloseRequested: root.close()
 
         PanelKeyCatcher {
             id: keyCatcher
@@ -195,8 +318,8 @@ Panel {
             Rectangle {                      // same opaque background in the popup and the window
                 anchors.fill: parent
                 z: -1
-                radius: root.detached ? 0 : Style.radius.small
-                color: root.panelBg
+                radius: root.inWindow ? 0 : root.atlasLook.cornerRadius
+                color: root.paintBg
             }
 
             // ══ HEADER ═════════════════════════════════════════════════
@@ -205,27 +328,68 @@ Panel {
                 anchors.left: parent.left
                 anchors.right: parent.right
                 anchors.top: parent.top
-                height: Style.space(68)
+                height: Style.space(84)
                 z: 2
 
-                Text {
-                    id: title
+                Rectangle {                          // the header card
+                    anchors.fill: parent
+                    anchors.margins: root.gutter
+                    radius: Style.space(12)
+                    color: Qt.rgba(root.fg.r, root.fg.g, root.fg.b, 0.05)
+                    border.width: 1
+                    border.color: Qt.rgba(root.fg.r, root.fg.g, root.fg.b, 0.08)
+                }
+
+                Rectangle {                          // round badge: ring with a filled dot
+                    id: avatar
                     anchors.left: parent.left
-                    anchors.leftMargin: Style.space(20)
+                    anchors.leftMargin: root.gutter + Style.space(12)
                     anchors.verticalCenter: parent.verticalCenter
-                    text: "OMATRAVEL"
-                    color: root.fg
-                    font.family: root.fontFamily
-                    font.pixelSize: root.fsMain + 6
-                    font.bold: true
-                    font.letterSpacing: 1
-                    textFormat: Text.PlainText
+                    width: Style.space(34)
+                    height: width
+                    radius: width / 2
+                    color: root.selectedFill
+                    border.width: 1
+                    border.color: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.7)
+                    Rectangle {
+                        anchors.centerIn: parent
+                        width: Style.space(12)
+                        height: width
+                        radius: width / 2
+                        color: root.accent
+                    }
+                }
+
+                Column {
+                    id: titleBlock
+                    anchors.left: avatar.right
+                    anchors.leftMargin: Style.space(12)
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: Style.space(2)
+                    Text {
+                        id: title
+                        text: "Omatravel"
+                        color: root.fg
+                        font.family: root.fontFamily
+                        font.pixelSize: root.fsMain + 2
+                        font.weight: Font.DemiBold
+                        textFormat: Text.PlainText
+                    }
+                    Text {
+                        text: root.tm
+                              ? root.tm.countryCount + " countries  \u00b7  " + root.tm.cityCount + " cities  \u00b7  " + root.tm.activeProfile
+                              : ""
+                        color: root.dim
+                        font.family: root.fontFamily
+                        font.pixelSize: root.fsSub
+                        textFormat: Text.PlainText
+                    }
                 }
 
                 FlatButton {
                     id: closeButton
                     anchors.right: parent.right
-                    anchors.rightMargin: Style.space(14)
+                    anchors.rightMargin: root.gutter + Style.space(10)
                     anchors.verticalCenter: parent.verticalCenter
                     text: "✕"
                     hPad: Style.space(10)
@@ -233,7 +397,7 @@ Panel {
                     accent: root.accent
                     fontFamily: root.fontFamily
                     pixelSize: root.fsMain
-                    onClicked: root.detached ? root._dock(false) : root.close()
+                    onClicked: root.close()
                 }
                 FlatButton {
                     id: helpButton
@@ -254,13 +418,13 @@ Panel {
                     anchors.right: helpButton.left
                     anchors.rightMargin: Style.space(4)
                     anchors.verticalCenter: parent.verticalCenter
-                    text: root.detached ? "↙" : "↗"
-                    hPad: Style.space(10)
+                    text: root.detached ? "Dock" : "Pop out"
+                    hPad: Style.space(12)
                     foreground: root.fg
                     accent: root.accent
                     fontFamily: root.fontFamily
-                    pixelSize: root.fsMain + 2
-                    onClicked: root.detached ? root._dock(true) : root.detach()
+                    pixelSize: root.fsSub
+                    onClicked: { root.userPicked = true; root.detached ? root.dock() : root.detach() }
                 }
                 FlatButton {
                     id: fitButton
@@ -293,12 +457,135 @@ Panel {
                     }
                 }
 
+            }
+
+            // ══ TABS: full width, the selected one underlined in the accent ══
+            Item {
+                id: mainTabs
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.top: header.bottom
+                height: Style.space(40)
+                z: 2
+
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.leftMargin: root.gutter
+                    anchors.rightMargin: root.gutter
+                    spacing: 0
+
+                    Repeater {
+                        model: [
+                            { key: "places",   label: "Places" },
+                            { key: "wishlist", label: "Wishlist" },
+                            { key: "stats",    label: "Stats" },
+                            { key: "profiles", label: "Profiles" },
+                            { key: "look",     label: "Settings" }
+                        ]
+                        delegate: Item {
+                            id: tabItem
+                            required property var modelData
+                            Layout.fillWidth: true
+                            Layout.fillHeight: true
+                            readonly property bool on: root.currentTab === modelData.key
+
+                            Text {
+                                anchors.centerIn: parent
+                                text: tabItem.modelData.label
+                                color: tabItem.on ? root.fg : root.dim
+                                font.family: root.fontFamily
+                                font.pixelSize: root.fsSub + 1
+                                font.weight: tabItem.on ? Font.DemiBold : Font.Normal
+                                textFormat: Text.PlainText
+                            }
+                            Rectangle {
+                                visible: tabItem.on
+                                anchors.left: parent.left
+                                anchors.right: parent.right
+                                anchors.bottom: parent.bottom
+                                height: 2
+                                radius: 1
+                                color: root.accent
+                            }
+                            MouseArea {
+                                anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: root.currentTab = tabItem.modelData.key
+                            }
+                        }
+                    }
+                }
+
                 Rectangle {
                     anchors.left: parent.left
                     anchors.right: parent.right
                     anchors.bottom: parent.bottom
+                    anchors.leftMargin: root.gutter
+                    anchors.rightMargin: root.gutter
                     height: 1
                     color: root.faint
+                    z: -1
+                }
+            }
+
+            // ══ FOOTER ═══════════════════════════════════════════════
+            Item {
+                id: footer
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.bottom: parent.bottom
+                height: Style.space(34)
+                z: 2
+
+                Rectangle {
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    height: 1
+                    color: root.faint
+                }
+
+                Row {
+                    anchors.left: parent.left
+                    anchors.leftMargin: root.gutter
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: Style.space(8)
+
+                    Rectangle {
+                        width: escText.implicitWidth + Style.space(12)
+                        height: Style.space(18)
+                        radius: 4
+                        color: Qt.rgba(root.fg.r, root.fg.g, root.fg.b, 0.08)
+                        anchors.verticalCenter: parent.verticalCenter
+                        Text {
+                            id: escText
+                            anchors.centerIn: parent
+                            text: "Esc"
+                            color: root.fg
+                            font.family: root.fontFamily
+                            font.pixelSize: root.fsSub - 1
+                            textFormat: Text.PlainText
+                        }
+                    }
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: "close"
+                        color: root.dim
+                        font.family: root.fontFamily
+                        font.pixelSize: root.fsSub - 1
+                        textFormat: Text.PlainText
+                    }
+                }
+
+                Text {
+                    anchors.right: parent.right
+                    anchors.rightMargin: root.gutter
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: root.currentTab === "look" ? "Changes apply instantly" : "Right-click the bar icon for settings"
+                    color: root.dim
+                    font.family: root.fontFamily
+                    font.pixelSize: root.fsSub - 1
+                    textFormat: Text.PlainText
                 }
             }
 
@@ -307,8 +594,8 @@ Panel {
                 id: body
                 anchors.left: parent.left
                 anchors.right: parent.right
-                anchors.top: header.bottom
-                anchors.bottom: parent.bottom
+                anchors.top: mainTabs.bottom
+                anchors.bottom: footer.top
                 z: 2
 
                 readonly property real sidebarWidth: Math.min(Style.space(440), width * 0.42)
@@ -327,10 +614,10 @@ Panel {
                         anchors.right: parent.right
                         anchors.top: parent.top
                         anchors.bottom: mapFooter.top
-                        anchors.leftMargin: Style.space(16)
-                        anchors.rightMargin: Style.space(16)
-                        anchors.topMargin: Style.space(16)
-                        active: root.opened || root.detached
+                        anchors.leftMargin: root.gutter
+                        anchors.rightMargin: root.gutter
+                        anchors.topMargin: root.gutter
+                        active: root.opened || root.windowShown
                         sourceComponent: GlobeView {
                             points: root.tm.globePoints
                             pathPoints: root.tm.pathPoints
@@ -361,7 +648,7 @@ Panel {
 
                         Text {
                             anchors.left: parent.left
-                            anchors.leftMargin: Style.space(20)
+                            anchors.leftMargin: root.gutter
                             anchors.right: stats.left
                             anchors.rightMargin: Style.space(12)
                             anchors.verticalCenter: parent.verticalCenter
@@ -379,7 +666,7 @@ Panel {
                         Text {
                             id: stats
                             anchors.right: parent.right
-                            anchors.rightMargin: Style.space(20)
+                            anchors.rightMargin: root.gutter
                             anchors.verticalCenter: parent.verticalCenter
                             text: root.tm
                                   ? root.tm.countryCount + " countries  ·  " + root.tm.cityCount + " cities"
@@ -412,62 +699,12 @@ Panel {
 
                     readonly property bool narrow: width < Style.space(340)
 
-                    // tabs ─ five equal outlined pills
-                    Item {
-                        id: tabs
-                        anchors.left: parent.left
-                        anchors.right: parent.right
-                        anchors.top: parent.top
-                        height: Style.space(60)
-
-                        RowLayout {
-                            anchors.fill: parent
-                            anchors.leftMargin: Style.space(14)
-                            anchors.rightMargin: Style.space(14)
-                            anchors.topMargin: Style.space(12)
-                            anchors.bottomMargin: Style.space(12)
-                            spacing: Style.space(6)
-
-                            Repeater {
-                                model: [
-                                    { key: "places",   label: "Places" },
-                                    { key: "wishlist", label: "Wishlist" },
-                                    { key: "stats",    label: "Stats" },
-                                    { key: "look",     label: "Look" },
-                                    { key: "profiles", label: "Profiles" }
-                                ]
-                                delegate: FlatButton {
-                                    required property var modelData
-                                    Layout.fillWidth: true
-                                    Layout.fillHeight: true
-                                    hPad: Style.space(4)
-                                    outlined: true
-                                    text: modelData.label
-                                    selected: root.currentTab === modelData.key
-                                    foreground: root.fg
-                                    accent: root.accent
-                                    fontFamily: root.fontFamily
-                                    pixelSize: root.fsSub
-                                    onClicked: root.currentTab = modelData.key
-                                }
-                            }
-                        }
-
-                        Rectangle {
-                            anchors.left: parent.left
-                            anchors.right: parent.right
-                            anchors.bottom: parent.bottom
-                            height: 1
-                            color: root.faint
-                        }
-                    }
-
                     // tab content
                     Item {
                         id: content
                         anchors.left: parent.left
                         anchors.right: parent.right
-                        anchors.top: tabs.bottom
+                        anchors.top: parent.top
                         anchors.bottom: parent.bottom
                         anchors.bottomMargin: addPanel.visible ? addPanel.height : 0
                         clip: true
@@ -1120,140 +1357,26 @@ Panel {
                             }
                         }
 
-                        // ══ LOOK ══════════════════════════════════════
-                        Flickable {
+                        // ══ SETTINGS ══════════════════════════════════
+                        SettingsView {
                             anchors.fill: parent
                             visible: root.currentTab === "look"
-                            contentHeight: lookCol.height + Style.space(40)
-                            clip: true
-                            boundsBehavior: Flickable.StopAtBounds
-
-                            Column {
-                                id: lookCol
-                                x: Style.space(16)
-                                y: Style.space(14)
-                                width: parent.width - Style.space(32)
-                                spacing: Style.space(8)
-
-                                SectionLabel {
-                                    text: "Theme"
-                                    foreground: root.fg
-                                    fontFamily: root.fontFamily
-                                    pixelSize: root.fsSub
-                                }
-                                Flow {
-                                    width: parent.width
-                                    spacing: Style.space(6)
-                                    Repeater {
-                                        model: root.tm ? ["auto"].concat(root.tm.themeNames) : []
-                                        delegate: FlatButton {
-                                            id: themeBtn
-                                            required property string modelData
-                                            text: themeBtn.modelData === "auto" ? "Follow Omarchy" : themeBtn.modelData
-                                            outlined: true
-                                            selected: themeBtn.modelData === root.tm.activeTheme
-                                            dotColor: root.tm.themeColor(themeBtn.modelData)
-                                            implicitHeight: Style.space(32)
-                                            foreground: root.fg
-                                            accent: root.accent
-                                            fontFamily: root.fontFamily
-                                            pixelSize: root.fsSub
-                                            onClicked: root.tm.setTheme(themeBtn.modelData)
-                                        }
-                                    }
-                                }
-
-                                Text {
-                                    width: parent.width
-                                    visible: root.tm && root.tm.activeTheme === "auto"
-                                    text: root.tm && root.tm.systemTheme
-                                          ? "Following your Omarchy theme"
-                                            + (root.tm.systemTheme.name ? " “" + root.tm.systemTheme.name + "”" : "")
-                                            + " — colours update the moment you switch it."
-                                          : "Couldn't read an Omarchy theme from ~/.config/omarchy/current — using the shell's colours.  [" + root.tm.themeDebug + "]"
-                                    color: root.dim
-                                    font.family: root.fontFamily
-                                    font.pixelSize: root.fsSub
-                                    wrapMode: Text.Wrap
-                                    textFormat: Text.PlainText
-                                }
-
-                                Item { width: 1; height: Style.space(8) }
-                                SectionLabel {
-                                    text: "Bar icon"
-                                    foreground: root.fg
-                                    fontFamily: root.fontFamily
-                                    pixelSize: root.fsSub
-                                }
-                                FieldBox {
-                                    id: iconField
-                                    width: parent.width
-                                    height: Style.space(32)
-                                    placeholderText: "🌍"
-                                    foreground: root.fg
-                                    accent: root.accent
-                                    fontFamily: root.fontFamily
-                                    pixelSize: root.fsMain
-                                    Component.onCompleted: text = root.tm ? root.tm.display.icon : ""
-                                    onAccepted: root.tm.setIcon(text)
-                                    onFocusedChanged: if (!focused && root.tm) root.tm.setIcon(text)
-                                }
-
-                                Item { width: 1; height: Style.space(8) }
-                                SectionLabel {
-                                    text: "Display"
-                                    foreground: root.fg
-                                    fontFamily: root.fontFamily
-                                    pixelSize: root.fsSub
-                                }
-                                Repeater {
-                                    model: [
-                                        { key: "showFlags",  label: "Show flags" },
-                                        { key: "showPath",   label: "Travel path on globe" },
-                                        { key: "showPlaces", label: "City labels on globe" }
-                                    ]
-                                    delegate: Item {
-                                        id: toggleRow
-                                        required property var modelData
-                                        width: lookCol.width
-                                        height: Style.space(44)
-                                        Text {
-                                            anchors.left: parent.left
-                                            anchors.right: toggleBtn.left
-                                            anchors.rightMargin: Style.space(8)
-                                            anchors.verticalCenter: parent.verticalCenter
-                                            text: toggleRow.modelData.label
-                                            color: root.fg
-                                            font.family: root.fontFamily
-                                            font.pixelSize: root.fsMain
-                                            elide: Text.ElideRight
-                                            textFormat: Text.PlainText
-                                        }
-                                        FlatButton {
-                                            id: toggleBtn
-                                            anchors.right: parent.right
-                                            anchors.verticalCenter: parent.verticalCenter
-                                            width: Style.space(64)
-                                            outlined: true
-                                            text: root.tm.display[toggleRow.modelData.key] ? "On" : "Off"
-                                            selected: root.tm.display[toggleRow.modelData.key]
-                                            foreground: root.fg
-                                            accent: root.accent
-                                            fontFamily: root.fontFamily
-                                            pixelSize: root.fsSub
-                                            onClicked: root.tm.setDisplayFlag(toggleRow.modelData.key,
-                                                                              !root.tm.display[toggleRow.modelData.key])
-                                        }
-                                        Rectangle {
-                                            anchors.left: parent.left
-                                            anchors.right: parent.right
-                                            anchors.bottom: parent.bottom
-                                            height: 1
-                                            color: root.faint
-                                        }
-                                    }
-                                }
+                            store: root.tm ? root.tm.settings : null
+                            readSetting: function(key, fallback) {
+                                return root.hostWidget ? root.hostWidget.setting(key, fallback) : fallback
                             }
+                            ink: root.fg
+                            accent: root.accent
+                            panelBg: root.panelBg
+                            barFg: root.fg
+                            fontFamily: root.fontFamily
+                            popped: root.inWindow
+                            footnote: !(root.tm && root.tm.activeTheme === "auto") ? ""
+                                : (root.tm.systemTheme
+                                    ? "Following your Omarchy theme"
+                                      + (root.tm.systemTheme.name ? " \u201c" + root.tm.systemTheme.name + "\u201d" : "")
+                                      + " \u2014 colours update the moment you switch it."
+                                    : "Couldn't read an Omarchy theme from ~/.config/omarchy/current \u2014 using the shell's colours.  [" + root.tm.themeDebug + "]")
                         }
 
                         // ══ PROFILES ══════════════════════════════════
@@ -1330,7 +1453,7 @@ Panel {
 
                                         Text {
                                             anchors.left: parent.left
-                                            anchors.leftMargin: Style.space(16)
+                                            anchors.leftMargin: root.gutter
                                             anchors.right: profActions.left
                                             anchors.rightMargin: Style.space(8)
                                             anchors.verticalCenter: parent.verticalCenter
@@ -1400,9 +1523,9 @@ Panel {
                             anchors.left: parent.left
                             anchors.right: parent.right
                             anchors.top: parent.top
-                            anchors.leftMargin: Style.space(16)
-                            anchors.rightMargin: Style.space(16)
-                            anchors.topMargin: Style.space(16)
+                            anchors.leftMargin: root.gutter
+                            anchors.rightMargin: root.gutter
+                            anchors.topMargin: root.gutter
                             spacing: Style.space(10)
 
                             SectionLabel {

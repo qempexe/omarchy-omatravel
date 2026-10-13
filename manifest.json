@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.qempexe.omatravel",
   "name": "Omatravel",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "author": "qempexe",
   "license": "MIT",
   "description": "Track visited countries and cities with multiple profiles, themes, a chronological travel path, stats, time travel, export and a zoom-banded GPU globe atlas.",
@@ -16,6 +16,252 @@
     "displayName": "Omatravel",
     "category": "Productivity",
     "allowMultiple": false,
-    "defaultSection": "right"
+    "defaultSection": "right",
+    "description": "Travel atlas with a spinning globe",
+    "aliases": [
+      "travel",
+      "globe",
+      "atlas",
+      "countries",
+      "cities",
+      "map"
+    ],
+    "defaults": {
+      "icon": "🌍",
+      "showCounts": true,
+      "clickAction": "panel",
+      "middleAction": "none",
+      "maxTooltipCountries": 8,
+      "maxTooltipCities": 10,
+      "showFlags": true,
+      "showPath": true,
+      "showPlaces": true,
+      "theme": "auto",
+      "customBg": "#1a1b26",
+      "customFg": "#c0caf5",
+      "accentColor": "#7aa2f7",
+      "opacity": 100,
+      "cornerRadius": 12,
+      "outline": false,
+      "surfaceTint": 0,
+      "fontScale": 100,
+      "density": "comfortable",
+      "openAs": "panel",
+      "windowWidth": 1180,
+      "windowHeight": 760
+    },
+    "schema": [
+      {
+        "key": "icon",
+        "type": "string",
+        "label": "Bar icon",
+        "defaultValue": "🌍",
+        "description": "Up to 8 characters shown in the bar, for example an emoji."
+      },
+      {
+        "key": "showCounts",
+        "type": "boolean",
+        "label": "Show counts",
+        "defaultValue": true,
+        "description": "Countries and cities next to the icon."
+      },
+      {
+        "key": "clickAction",
+        "type": "enum",
+        "label": "Left click",
+        "options": [
+          "panel",
+          "settings",
+          "none"
+        ],
+        "defaultValue": "panel",
+        "description": "What a left click on the widget does. Right click always opens the settings."
+      },
+      {
+        "key": "middleAction",
+        "type": "enum",
+        "label": "Middle click",
+        "options": [
+          "none",
+          "panel",
+          "settings"
+        ],
+        "defaultValue": "none",
+        "description": "What a middle click on the widget does."
+      },
+      {
+        "key": "maxTooltipCountries",
+        "type": "integer",
+        "label": "Countries in the tooltip",
+        "min": 1,
+        "max": 30,
+        "step": 1,
+        "defaultValue": 8,
+        "description": "How many countries the bar tooltip lists before \"+ N more\"."
+      },
+      {
+        "key": "maxTooltipCities",
+        "type": "integer",
+        "label": "Cities per country",
+        "min": 1,
+        "max": 30,
+        "step": 1,
+        "defaultValue": 10,
+        "description": "How many cities the tooltip lists under each country."
+      },
+      {
+        "key": "showFlags",
+        "type": "boolean",
+        "label": "Show flags",
+        "defaultValue": true,
+        "description": "Country flag emoji in the lists and the tooltip."
+      },
+      {
+        "key": "showPath",
+        "type": "boolean",
+        "label": "Travel path on the globe",
+        "defaultValue": true,
+        "description": "Draw arcs between your dated visits, in order."
+      },
+      {
+        "key": "showPlaces",
+        "type": "boolean",
+        "label": "City labels on the globe",
+        "defaultValue": true,
+        "description": "Label cities as you zoom in."
+      },
+      {
+        "key": "theme",
+        "type": "enum",
+        "label": "Atlas theme",
+        "options": [
+          "auto",
+          "custom",
+          "catppuccin",
+          "dracula",
+          "everforest",
+          "gruvbox",
+          "kanagawa",
+          "mono",
+          "nord",
+          "omarchy",
+          "rose-pine",
+          "tokyo-night"
+        ],
+        "defaultValue": "auto",
+        "description": "Colors of the atlas and the globe. Follow Omarchy updates the moment you switch your theme. Custom uses the three colors below."
+      },
+      {
+        "key": "customBg",
+        "type": "string",
+        "label": "Background",
+        "defaultValue": "#1a1b26",
+        "description": "Custom theme background. A hex like #1a1b26."
+      },
+      {
+        "key": "customFg",
+        "type": "string",
+        "label": "Text",
+        "defaultValue": "#c0caf5",
+        "description": "Custom theme text. A hex like #c0caf5."
+      },
+      {
+        "key": "accentColor",
+        "type": "string",
+        "label": "Accent",
+        "defaultValue": "#7aa2f7",
+        "description": "Custom theme accent: selected parts, pins and the travel path."
+      },
+      {
+        "key": "opacity",
+        "type": "integer",
+        "label": "Opacity",
+        "min": 50,
+        "max": 100,
+        "step": 1,
+        "defaultValue": 100,
+        "description": "Background opacity of the atlas. Text, globe and buttons stay solid."
+      },
+      {
+        "key": "cornerRadius",
+        "type": "integer",
+        "label": "Roundness",
+        "min": 0,
+        "max": 24,
+        "step": 2,
+        "defaultValue": 12,
+        "description": "Corners of the docked atlas. 0 is square, 24 is very round."
+      },
+      {
+        "key": "outline",
+        "type": "boolean",
+        "label": "Window outline",
+        "defaultValue": false,
+        "description": "Draw the edge of the docked atlas in the accent color instead of a plain neutral line."
+      },
+      {
+        "key": "surfaceTint",
+        "type": "integer",
+        "label": "Window tint",
+        "min": 0,
+        "max": 30,
+        "step": 1,
+        "defaultValue": 0,
+        "description": "How much of the accent color washes over the background. 0 keeps it plain."
+      },
+      {
+        "key": "fontScale",
+        "type": "integer",
+        "label": "Text size",
+        "min": 80,
+        "max": 150,
+        "step": 5,
+        "defaultValue": 100,
+        "description": "Text size in percent. 100 is normal."
+      },
+      {
+        "key": "density",
+        "type": "enum",
+        "label": "Spacing",
+        "options": [
+          "compact",
+          "comfortable",
+          "spacious"
+        ],
+        "defaultValue": "comfortable",
+        "description": "How much air there is around the edges of the atlas."
+      },
+      {
+        "key": "openAs",
+        "type": "enum",
+        "label": "Open as",
+        "options": [
+          "panel",
+          "window"
+        ],
+        "defaultValue": "panel",
+        "description": "Where the bar icon opens the atlas. You can always pop it out or dock it back from the header."
+      },
+      {
+        "key": "windowWidth",
+        "type": "integer",
+        "label": "Width",
+        "min": 800,
+        "max": 1800,
+        "step": 20,
+        "defaultValue": 1180,
+        "description": "How wide the atlas opens."
+      },
+      {
+        "key": "windowHeight",
+        "type": "integer",
+        "label": "Height",
+        "min": 500,
+        "max": 1200,
+        "step": 20,
+        "defaultValue": 760,
+        "description": "How tall the atlas opens."
+      }
+    ]
   }
 }
