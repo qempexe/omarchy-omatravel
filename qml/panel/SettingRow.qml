@@ -1,25 +1,12 @@
 import QtQuick
 import QtQuick.Layouts
 
-// One setting in the popup: a label + plain-language hint on the left, the
-// current value / reset on the right, and a purpose-built control underneath.
-//
-//   kind  enum    segmented control (<= 4 options) or wrapping chips
-//         scheme  tile picker for the panel's own colors (theme / custom / mono)
-//         int     slider with - / + nudge buttons and a "default" notch
-//         bool    switch
-//         string  text field (+ optional preset chips)
-//         color   swatch palette + hex field
-//
-// Text and soft tints come from `fg`; selected / filled parts use `accent`
-// (the theme accent, a custom color, or `fg` in monochrome). Numbers are shown plain: no px / ms / % suffixes.
-//
-// Text fields are SafeField items, never TextInput: a TextInput watches the
-// clipboard and reads foreign data on every clipboard change (to compute
-// canPaste), unbounded, with no way to turn that off. SafeField has no clipboard
-// connection at all. Paste requests are emitted as
-// `clipboardPaste(target, maxBytes)`; the owner must read at most `maxBytes`
-// and then call `insertPasted(target, text)`.
+// one setting: label + hint left, value / reset right, control below.
+// kinds: enum (segments <= 4, else chips), scheme (color tiles), int (slider + -/+ + default notch),
+// bool (switch), string (field + preset chips), color (swatches + hex).
+// text and soft tints from fg, selected parts in accent. no px / ms / % suffixes on purpose.
+// text fields are SafeField, never TextInput (that one keeps reading the clipboard).
+// paste goes out as clipboardPaste(target, maxBytes), owner reads max that and calls insertPasted()
 Item {
     id: root
 
@@ -34,33 +21,33 @@ Item {
     property real min: 0
     property real max: 100
     property real step: 1
-    property real divisor: 1           // display value = value / divisor
+    property real divisor: 1           // shown value = value / divisor
     property int decimals: 0
-    property bool dimmed: false        // setting currently has no effect
-    property bool locked: false        // shown, but has no effect right now and ignores input
+    property bool dimmed: false        // does nothing right now
+    property bool locked: false        // shown, but does nothing right now and ignores input
     property color fg: "white"
     property color accent: fg          // selected / filled parts
-    property color bg: "black"         // text drawn on top of an accent fill
-    property color panel: "black"      // opaque popup background
+    property color bg: "black"         // text on an accent fill
+    property color panel: "black"      // solid popup background
     property color barFg: fg           // bar foreground
     property color schemeAccent: "#7aa2f7"   // swatches for the scheme tiles
     property color schemeBg: "#1a1b26"
     property color schemeCustom: "#7aa2f7"
-    property color schemeNeutral: "#121216"  // monochrome / custom panel background
-    property color schemeMono: "#f2f2f4"     // monochrome ink
+    property color schemeNeutral: "#121216"  // mono / custom background
+    property color schemeMono: "#f2f2f4"     // mono ink
     property string fontFamily: ""
     property color customColor: "#7aa2f7"
     property var demoSpectrum: []
     property var demoScope: []
 
-    // Byte cap for any clipboard read triggered from a text field.
+    // byte cap for any clipboard read from a text field
     property int pasteMaxBytes: 1024
-    property int maxLength: 256        // text fields: max characters stored
+    property int maxLength: 256        // text fields: max chars stored
 
     signal edited(var v)
     signal clipboardPaste(var target, int maxBytes)
 
-    // ---- helpers -----------------------------------------------------------
+    // ---- helpers ----
     function tint(a) { return Qt.rgba(fg.r, fg.g, fg.b, a) }
     function accentTint(a) { return Qt.rgba(accent.r, accent.g, accent.b, a) }
     function str(v) { return (v === null || v === undefined) ? "" : String(v) }
@@ -78,10 +65,10 @@ Item {
         if (v !== cur) edited(v)
     }
 
-    // Requests a capped clipboard read for `target`; the owner answers via insertPasted().
+    // ask for a capped clipboard read for target, owner answers with insertPasted()
     function boundedPaste(target) { clipboardPaste(target, pasteMaxBytes) }
 
-    // Owner calls this with the capped text. Single line only, inserted at the cursor.
+    // owner calls this with the capped text. single line, at the cursor
     function insertPasted(target, raw) {
         if (!target) return
         var t = String(raw === null || raw === undefined ? "" : raw).split(/\r?\n/)[0]
@@ -101,7 +88,7 @@ Item {
     enabled: !locked
     Behavior on opacity { NumberAnimation { duration: 140 } }
 
-    // Small square button used for - / + and reset.
+    // small square button (-, +, reset)
     component IconButton: Rectangle {
         id: btn
         property string glyph: ""
@@ -114,7 +101,7 @@ Item {
             ? Qt.rgba(ink.r, ink.g, ink.b, 0.18)
             : Qt.rgba(ink.r, ink.g, ink.b, 0.08)
         Text {
-            textFormat: Text.PlainText  // metadata is untrusted: never auto-detect rich text
+            textFormat: Text.PlainText  // plain text only
             anchors.centerIn: parent
             text: btn.glyph
             color: btn.ink
@@ -130,14 +117,9 @@ Item {
         }
     }
 
-    // Single-line editor that is NOT a TextInput. QQuickTextInput connects to the
-    // clipboard's dataChanged / selectionChanged signals in its constructor and
-    // re-reads the foreign clipboard (to update canPaste) on every change, with
-    // no size or time limit, even when paste keys and middle clicks are
-    // intercepted. This item draws a plain Text and handles keys itself, so no
-    // clipboard connection ever exists. Pasting is only the owner's bounded
-    // explicit path: Ctrl+V / Shift+Insert emit `pasteRequested`.
-    // Not supported (by design): IME composition, copy/cut, mouse selection.
+    // single line editor that is not a TextInput (those hook the clipboard and read it on every
+    // change). plain Text + own keys. paste only via ctrl+v / shift+insert -> pasteRequested.
+    // no IME, no copy/cut, no mouse selection
     component SafeField: Item {
         id: field
         property string text: ""
@@ -159,7 +141,7 @@ Item {
             cursorPosition = Math.max(0, Math.min(text.length, cursorPosition))
         }
 
-        // Insert plain text at `pos` (replaces everything after select-all).
+        // insert plain text at pos (replaces everything after select-all)
         function insert(pos, str) {
             var t = String(str === null || str === undefined ? "" : str)
                 .replace(/[\u0000-\u001f\u007f]/g, "")
@@ -247,7 +229,7 @@ Item {
 
         MouseArea {
             anchors.fill: parent
-            acceptedButtons: Qt.LeftButton      // middle / right: ignored, nothing pastes
+            acceptedButtons: Qt.LeftButton      // middle / right click: ignored, nothing pastes
             cursorShape: Qt.IBeamCursor
             onPressed: function(mouse) {
                 field.forceActiveFocus()
@@ -284,7 +266,7 @@ Item {
             case Qt.Key_End: selectAll = false; cursorPosition = text.length; event.accepted = true; return
             default: break
             }
-            // Printable characters only; leave shortcuts (Esc, Alt+arrows...) to the popup.
+            // printable chars only, shortcuts (esc, alt+arrows...) go to the popup
             if (!ctrl && !(mods & Qt.AltModifier) && !(mods & Qt.MetaModifier)
                     && event.text.length > 0 && event.text.charCodeAt(0) >= 32
                     && event.text.charCodeAt(0) !== 127) {
@@ -301,7 +283,7 @@ Item {
         anchors.top: parent.top
         spacing: 9
 
-        // ---- head: label + hint | value / switch / reset -------------------
+        // ---- head: label + hint | value / switch / reset ----
         RowLayout {
             Layout.fillWidth: true
             spacing: 8
@@ -311,7 +293,7 @@ Item {
                 spacing: 2
 
                 Text {
-                    textFormat: Text.PlainText  // metadata is untrusted: never auto-detect rich text
+                    textFormat: Text.PlainText  // plain text only
                     Layout.fillWidth: true
                     text: root.label
                     color: root.fg
@@ -321,7 +303,7 @@ Item {
                     elide: Text.ElideRight
                 }
                 Text {
-                    textFormat: Text.PlainText  // metadata is untrusted: never auto-detect rich text
+                    textFormat: Text.PlainText  // plain text only
                     Layout.fillWidth: true
                     text: root.hint
                     visible: root.hint !== ""
@@ -333,7 +315,7 @@ Item {
                 }
             }
 
-            // numeric stepper
+            // number stepper
             RowLayout {
                 visible: root.kind === "int"
                 spacing: 4
@@ -341,7 +323,7 @@ Item {
 
                 IconButton { glyph: "\u2212"; ink: root.fg; onClicked: root.nudge(-1) }
                 Text {
-                    textFormat: Text.PlainText  // metadata is untrusted: never auto-detect rich text
+                    textFormat: Text.PlainText  // plain text only
                     Layout.preferredWidth: 34
                     horizontalAlignment: Text.AlignHCenter
                     text: root.show(root.value)
@@ -377,7 +359,7 @@ Item {
                 }
             }
 
-            // back to default (only when changed)
+            // back to default, only when changed
             IconButton {
                 visible: !root.atDefault
                 Layout.alignment: Qt.AlignTop
@@ -387,7 +369,7 @@ Item {
             }
         }
 
-        // ---- enum: segmented control ----------------------------------------
+        // ---- enum: segments ----
         Rectangle {
             visible: root.useSegments
             Layout.fillWidth: true
@@ -414,7 +396,7 @@ Item {
                         Behavior on color { ColorAnimation { duration: 100 } }
 
                         Text {
-                            textFormat: Text.PlainText  // metadata is untrusted: never auto-detect rich text
+                            textFormat: Text.PlainText  // plain text only
                             anchors.centerIn: parent
                             width: parent.width - 8
                             horizontalAlignment: Text.AlignHCenter
@@ -437,7 +419,7 @@ Item {
             }
         }
 
-        // ---- enum with many options: wrapping chips --------------------------
+        // ---- enum with lots of options: chips ----
         Flow {
             visible: root.kind === "enum" && !root.useSegments
             Layout.fillWidth: true
@@ -452,7 +434,7 @@ Item {
                     radius: 6
                     color: on ? root.accent : root.tint(0.07)
                     Text {
-                        textFormat: Text.PlainText  // metadata is untrusted: never auto-detect rich text
+                        textFormat: Text.PlainText  // plain text only
                         id: chipText
                         anchors.centerIn: parent
                         text: root.labelFor(modelData)
@@ -469,7 +451,7 @@ Item {
             }
         }
 
-        // ---- viz / colors: tiles that draw the real thing --------------------
+        // ---- colors: tiles drawing the real thing ----
         GridLayout {
             visible: root.kind === "scheme"
             Layout.fillWidth: true
@@ -491,7 +473,7 @@ Item {
                     border.color: on ? root.accent : root.tint(0.10)
                     Behavior on color { ColorAnimation { duration: 100 } }
 
-                    // scheme tile: a miniature panel drawn in that scheme
+                    // scheme tile, a tiny panel in that scheme
                     Rectangle {
                         visible: root.kind === "scheme"
                         anchors.horizontalCenter: parent.horizontalCenter
@@ -511,7 +493,7 @@ Item {
                             x: 6; y: 6; width: 16; height: 7; radius: 3
                             color: parent.swatch
                         }
-                        Rectangle {   // fake slider track + fill
+                        Rectangle {   // fake slider
                             x: 6; y: 18; width: parent.width - 12; height: 4; radius: 2
                             color: Qt.rgba(root.schemeMono.r, root.schemeMono.g, root.schemeMono.b, 0.18)
                             Rectangle {
@@ -521,7 +503,7 @@ Item {
                         }
                     }
                     Text {
-                        textFormat: Text.PlainText  // metadata is untrusted: never auto-detect rich text
+                        textFormat: Text.PlainText  // plain text only
                         anchors.horizontalCenter: parent.horizontalCenter
                         anchors.bottom: parent.bottom
                         anchors.bottomMargin: 7
@@ -543,7 +525,7 @@ Item {
             }
         }
 
-        // ---- int: slider ---------------------------------------------------------
+        // ---- int: slider ----
         ColumnLayout {
             visible: root.kind === "int"
             Layout.fillWidth: true
@@ -570,7 +552,7 @@ Item {
                         color: root.accent
                     }
                 }
-                // small notch marking where the default sits
+                // notch where the default is
                 Rectangle {
                     visible: root.defaultValue !== null
                     width: 2; height: 12; radius: 1
@@ -597,7 +579,7 @@ Item {
                         var v = root.min + t * (root.max - root.min)
                         v = Math.round((v - root.min) / root.step) * root.step + root.min
                         v = Math.max(root.min, Math.min(root.max, v))
-                        // only report real changes, so dragging doesn't spam the config
+                        // only real changes, so a drag doesn't rewrite the config every pixel
                         if (v !== Number(root.value)) root.edited(v)
                     }
                     onPressed: function(m) { apply(m.x) }
@@ -608,14 +590,14 @@ Item {
             RowLayout {
                 Layout.fillWidth: true
                 Text {
-                    textFormat: Text.PlainText  // metadata is untrusted: never auto-detect rich text
+                    textFormat: Text.PlainText  // plain text only
                     text: root.show(root.min)
                     color: root.fg; opacity: 0.4
                     font.family: root.fontFamily; font.pixelSize: 8
                 }
                 Item { Layout.fillWidth: true }
                 Text {
-                    textFormat: Text.PlainText  // metadata is untrusted: never auto-detect rich text
+                    textFormat: Text.PlainText  // plain text only
                     text: root.show(root.max)
                     color: root.fg; opacity: 0.4
                     font.family: root.fontFamily; font.pixelSize: 8
@@ -623,7 +605,7 @@ Item {
             }
         }
 
-        // ---- string: field + preset chips ----------------------------------------
+        // ---- string: field + preset chips ----
         RowLayout {
             visible: root.kind === "string"
             Layout.fillWidth: true
@@ -652,7 +634,7 @@ Item {
                     fontFamily: root.fontFamily
                     fontPixelSize: 10
                     onEditingFinished: root.edited(text)
-                    // mirror the store unless the user is typing
+                    // follow the store unless you're typing
                     Binding on text {
                         when: !textIn.activeFocus
                         value: root.str(root.value)
@@ -674,7 +656,7 @@ Item {
                         radius: 6
                         color: on ? root.accent : (pArea.containsMouse ? root.tint(0.14) : root.tint(0.07))
                         Text {
-                            textFormat: Text.PlainText  // metadata is untrusted: never auto-detect rich text
+                            textFormat: Text.PlainText  // plain text only
                             anchors.centerIn: parent
                             text: String(modelData).trim() === "" ? "\u2423" : String(modelData).trim()
                             color: parent.on ? root.bg : root.fg
@@ -693,7 +675,7 @@ Item {
             }
         }
 
-        // ---- color: palette + hex field ------------------------------------------
+        // ---- color: swatches + hex ----
         ColumnLayout {
             visible: root.kind === "color"
             Layout.fillWidth: true

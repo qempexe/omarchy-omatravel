@@ -5,24 +5,26 @@ import QtQuick.Layouts
 import Quickshell
 import qs.Commons
 import qs.Ui
+import "../globe"
+import "../controls"
 
-// layout: header bar on top, big globe on the left,
-// tabbed sidebar on the right with the "add a place" form docked at the bottom.
+// layout: header on top, globe on the left, tabbed sidebar on the right,
+// add a place form at the bottom of it
 Panel {
     id: root
     moduleName: "io.github.qempexe.omatravel"
     manageIpc: false
 
-    // injected by BarWidget
+    // set by BarWidget
     property var anchorItem: null
     property var hostWidget: null
     property var travelModel: null
-    property bool vertical: false             // the bar is on the left / right edge
+    property bool vertical: false             // bar on the left / right edge
 
     property string currentTab: "places"
     readonly property var atlasLook: tm ? tm.look : ({ opacity: 100, cornerRadius: 12, outline: false, surfaceTint: 0,
         fontScale: 100, density: "comfortable", openAs: "panel", windowWidth: 1180, windowHeight: 760 })
-    // the one inset used on every edge of the panel (Settings > Look > Spacing)
+    // the one inset used on every edge (settings > look > spacing)
     readonly property int gutter: atlasLook.density === "compact" ? 10 : (atlasLook.density === "spacious" ? 18 : 14)
     property string query: ""
     property bool helpVisible: false
@@ -33,13 +35,13 @@ Panel {
     property bool addAsWishlist: false
     property string newProfile: ""
 
-    // ── detach: the whole panel (`card`) can live in the bar popup or in its own window ──
-    property bool detached: false             // popped-out mode, kept until Dock
-    // ── colours: ONE palette shared by the bar popup and the detached window ─────────
-    //   named theme            -> that theme's colours
-    //   "Follow Omarchy"       -> live Omarchy colours (colors.toml), re-read when the theme changes
-    //   Omarchy file not found -> the shell's own bar colours (made opaque)
-    // Nothing below depends on `detached`, so both variants always paint identically.
+    // pop out: the whole card lives in the bar popup or in its own window
+    property bool detached: false             // popped out, until Dock
+    // colors: one palette for the popup and the window
+    // named theme      -> that theme
+    // follow omarchy   -> live omarchy colors, re-read when the theme changes
+    // no omarchy file  -> the shell's bar colors (made opaque)
+    // nothing here depends on `detached`, so both look the same
     readonly property bool useBarColors: !tm || (tm.activeTheme === "auto" && tm.systemTheme === null)
     readonly property bool followSystem: !!tm && tm.activeTheme === "auto" && tm.systemTheme !== null
     readonly property color fg: useBarColors && root.barForeground !== undefined
@@ -47,27 +49,27 @@ Panel {
     readonly property color baseBg: {
         if (useBarColors && root.barBackground !== undefined) {
             var c = root.barBackground
-            return Qt.rgba(c.r, c.g, c.b, 1)          // bar colours may be translucent; the base never is
+            return Qt.rgba(c.r, c.g, c.b, 1)          // bar colors can be translucent, the base never is
         }
         return tm ? tm.themeBackground : Qt.rgba(0.10, 0.09, 0.08, 1)
     }
-    // Solid background with the accent washed over it (Settings > Look > Window tint).
+    // solid background with some accent over it (settings > look > window tint)
     readonly property color panelBg: {
         var t = root.atlasLook.surfaceTint / 100
         var b = root.baseBg, a = root.accent
         return Qt.rgba(b.r + (a.r - b.r) * t, b.g + (a.g - b.g) * t, b.b + (a.b - b.b) * t, 1)
     }
-    // What is actually painted behind the content (Settings > Look > Opacity).
+    // what's actually painted behind the content (settings > look > opacity)
     readonly property color paintBg: Qt.rgba(panelBg.r, panelBg.g, panelBg.b, atlasLook.opacity / 100)
-    // Tell the model what colour the shell is using, so it can tell which Omarchy theme is active.
+    // tell the model the shell's color so it can tell which omarchy theme is on
     Binding { target: root.tm; property: "shellBg"; value: root.barBackground; when: !!root.tm }
 
-    property var _home: null          // the popup's content item, remembered while the card is in the window
+    property var _home: null          // the popup's content item, kept while the card is in the window
 
     readonly property var tm: travelModel
     readonly property color accent: tm ? tm.themeAccent : "#d4a35a"
     readonly property color wishColor: "#cba6f7"
-    // One consistent, compact type scale (derived from the shell body size).
+    // one compact type scale, from the shell's body size
     readonly property int fsMain: Math.max(8, Math.round(Math.max(10, Style.font.body * 0.9) * atlasLook.fontScale / 100))
     readonly property int fsSub:  Math.max(7, Math.round(Math.max(9,  Style.font.body * 0.8) * atlasLook.fontScale / 100))
 
@@ -96,15 +98,12 @@ Panel {
         ] }
     ]
 
-    // ── pop out / dock ─────────────────────────────────────────────────────────────
-    // `detached` is the mode the user picked with the header button, and it sticks:
-    // while popped out, the bar icon shows and hides the window (it does not dock it),
-    // and closing the window (✕, Super+Q …) just hides it until the next click.
-    // Only **Dock** goes back to the bar popup.
-    // The window exists exactly while it is wanted, so a dead window can never leave
-    // the bar icon doing nothing.
+    // pop out / dock
+    // `detached` is what you picked in the header and it sticks: popped out, the bar icon
+    // shows/hides the window, and closing it (x, super+q) only hides it. only Dock goes back
+    // to the popup. the window exists exactly while it's wanted, so the icon never does nothing
     property bool windowRequested: false
-    property bool inWindow: false                  // the card is currently inside the window
+    property bool inWindow: false                  // the card is in the window right now
     readonly property bool windowShown: root.inWindow && root.windowRequested
 
     function _showWindow() {
@@ -126,16 +125,15 @@ Panel {
         root.inWindow = true
     }
 
-    // The card always goes back to the popup before the window is destroyed.
+    // card always goes back to the popup before the window is destroyed
     function _leaveWindow() {
         if (!root.inWindow) return
         if (root._home) card.parent = root._home
         root.inWindow = false
     }
 
-    // The window manager closed the window: forget it, stay popped out.
-    // Until the header's Pop out / Dock is used, Settings > Window > Open as decides
-    // where the bar icon opens the atlas, so a change there takes effect at once.
+    // window manager closed it: forget it, stay popped out.
+    // until pop out / dock is used, settings > window > open as decides where the icon opens
     property bool userPicked: false
 
     function _chooseMode() {
@@ -154,7 +152,7 @@ Panel {
         Qt.callLater(function() { if (!root.windowRequested) detachLoader.active = false })
     }
 
-    // Bar -> window.
+    // bar -> window
     function detach() {
         root.detached = true
         root.helpVisible = false
@@ -164,17 +162,15 @@ Panel {
         root._showWindow()
     }
 
-    // Window -> bar. The popup is shown only once the window is really gone: with no
-    // other window on the screen, Hyprland moves focus when the window closes, and a
-    // popup opened in that same moment would lose its focus grab and close at once.
+    // window -> bar. popup only opens once the window is really gone: with nothing else on
+    // screen hyprland moves focus on close and the popup would lose its grab and close
     function dock() {
         root._hideWindow()
         root.detached = false
         dockShowTimer.restart()
     }
 
-    // If the popup still has not opened shortly after docking, pop the window back out
-    // rather than leaving nothing on screen.
+    // popup still not open shortly after docking? pop the window back out instead of nothing
     property bool _wantPanel: false
 
     function _openPanel() {
@@ -207,7 +203,7 @@ Panel {
         }
     }
 
-    // Used by BarWidget: what the bar icon does in each mode.
+    // for BarWidget: what the icon does in each mode
     function showAtlas() {
         root._chooseMode()
         if (root.detached) root._showWindow()
@@ -223,8 +219,8 @@ Panel {
         }
     }
 
-    // True for a moment after a click outside closed the panel, so the same click on the
-    // bar button does not open it again.
+    // true for a moment after a click outside closed the panel,
+    // so that same click on the bar button doesn't open it again
     function recentlyClosed() { return panel.justClosed() }
 
     function open()  { root.controller.show() }
@@ -315,14 +311,14 @@ Panel {
             width: parent ? parent.width : 0
             height: parent ? parent.height : 0
 
-            Rectangle {                      // same opaque background in the popup and the window
+            Rectangle {                      // same solid background in the popup and the window
                 anchors.fill: parent
                 z: -1
                 radius: root.inWindow ? 0 : root.atlasLook.cornerRadius
                 color: root.paintBg
             }
 
-            // ══ HEADER ═════════════════════════════════════════════════
+            // ---- header ----
             Item {
                 id: header
                 anchors.left: parent.left
@@ -340,7 +336,7 @@ Panel {
                     border.color: Qt.rgba(root.fg.r, root.fg.g, root.fg.b, 0.08)
                 }
 
-                Rectangle {                          // round badge: ring with a filled dot
+                Rectangle {                          // round badge: ring with a dot
                     id: avatar
                     anchors.left: parent.left
                     anchors.leftMargin: root.gutter + Style.space(12)
@@ -459,7 +455,7 @@ Panel {
 
             }
 
-            // ══ TABS: full width, the selected one underlined in the accent ══
+            // ---- tabs, full width, selected one underlined ----
             Item {
                 id: mainTabs
                 anchors.left: parent.left
@@ -528,7 +524,7 @@ Panel {
                 }
             }
 
-            // ══ FOOTER ═══════════════════════════════════════════════
+            // ---- footer ----
             Item {
                 id: footer
                 anchors.left: parent.left
@@ -589,7 +585,7 @@ Panel {
                 }
             }
 
-            // ══ BODY ═══════════════════════════════════════════════════
+            // ---- body ----
             Item {
                 id: body
                 anchors.left: parent.left
@@ -600,7 +596,7 @@ Panel {
 
                 readonly property real sidebarWidth: Math.min(Style.space(440), width * 0.42)
 
-                // ── map pane ───────────────────────────────────────────
+                // map
                 Item {
                     id: mapPane
                     anchors.left: parent.left
@@ -689,7 +685,7 @@ Panel {
                     color: root.faint
                 }
 
-                // ── sidebar ────────────────────────────────────────────
+                // sidebar
                 Item {
                     id: sidebar
                     width: body.sidebarWidth
@@ -709,7 +705,7 @@ Panel {
                         anchors.bottomMargin: addPanel.visible ? addPanel.height : 0
                         clip: true
 
-                        // ══ PLACES ════════════════════════════════════
+                        // ---- places ----
                         ListView {
                             id: countryList
                             anchors.fill: parent
@@ -909,7 +905,7 @@ Panel {
                                             }
                                         }
 
-                                        // Dated visits, one line per city, each removable on its own.
+                                        // dated visits, one line per city, each removable
                                         Repeater {
                                             model: crow.modelData.cityItems
                                             delegate: Item {
@@ -996,7 +992,7 @@ Panel {
                             }
                         }
 
-                        // ══ WISHLIST ══════════════════════════════════
+                        // ---- wishlist ----
                         Flickable {
                             anchors.fill: parent
                             visible: root.currentTab === "wishlist"
@@ -1126,7 +1122,7 @@ Panel {
                             }
                         }
 
-                        // ══ STATS ═════════════════════════════════════
+                        // ---- stats ----
                         Flickable {
                             anchors.fill: parent
                             visible: root.currentTab === "stats"
@@ -1357,7 +1353,7 @@ Panel {
                             }
                         }
 
-                        // ══ SETTINGS ══════════════════════════════════
+                        // ---- settings ----
                         SettingsView {
                             anchors.fill: parent
                             visible: root.currentTab === "look"
@@ -1379,7 +1375,7 @@ Panel {
                                     : "Couldn't read an Omarchy theme from ~/.config/omarchy/current \u2014 using the shell's colours.  [" + root.tm.themeDebug + "]")
                         }
 
-                        // ══ PROFILES ══════════════════════════════════
+                        // ---- profiles ----
                         Flickable {
                             anchors.fill: parent
                             visible: root.currentTab === "profiles"
@@ -1501,7 +1497,7 @@ Panel {
                         }
                     }
 
-                    // ══ ADD A PLACE (docked at the bottom) ═══════════════
+                    // ---- add a place (bottom) ----
                     Item {
                         id: addPanel
                         visible: root.currentTab === "places" || root.currentTab === "wishlist"
@@ -1674,7 +1670,7 @@ Panel {
                     }
                 }
 
-                // ══ CONTROLS OVERLAY ══════════════════════════════════
+                // ---- controls overlay ----
                 Rectangle {
                     anchors.fill: parent
                     visible: root.helpVisible

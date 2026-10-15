@@ -2,12 +2,13 @@ import QtQuick
 import Quickshell
 import qs.Commons
 import qs.Ui
+import "core"
 
 BarWidget {
     id: root
     moduleName: "io.github.qempexe.omatravel"
 
-    // ── settings: the settings panel's own edits (settingsStore) win over setting() ──
+    // settings: my own edits (settingsStore) win over setting()
     SettingsStore { id: settingsStore }
 
     function v(key, fallback) {
@@ -15,7 +16,7 @@ BarWidget {
         return o !== undefined ? o : fallback
     }
 
-    // The shell's own setting() values, used by TravelModel when the panel has not set a key.
+    // the shell's setting() values, used when the panel hasn't set a key
     readonly property var shellDefaults: ({
         icon: setting("icon", "\ud83c\udf0d"),
         showCounts: setting("showCounts", true),
@@ -58,8 +59,7 @@ BarWidget {
         ? panelLoader.item.popoutSwitchClosing === true
         : false
 
-    // While popped out, the bar icon shows and hides the window;
-    // only the header's Dock button brings the atlas back to the bar.
+    // popped out: the bar icon shows/hides the window, only Dock in the header brings it back
     function open() { if (panelLoader.item) panelLoader.item.showAtlas() }
     function close() { if (panelLoader.item) panelLoader.item.close() }
     function toggle() { if (panelLoader.item) panelLoader.item.toggleAtlas() }
@@ -67,7 +67,7 @@ BarWidget {
         if (panelLoader.item) panelLoader.item.closeForPopoutSwitch()
     }
 
-    // Settings are the last tab of the atlas panel: open it there.
+    // settings are the last tab of the atlas
     function openSettings() {
         if (!panelLoader.item) return
         panelLoader.item.currentTab = "look"
@@ -101,7 +101,7 @@ BarWidget {
     Loader {
         id: panelLoader
         active: true
-        source: Qt.resolvedUrl("Panel.qml")
+        source: Qt.resolvedUrl("panel/Panel.qml")
         visible: false
         onLoaded: {
             root.injectPanel()

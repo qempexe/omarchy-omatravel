@@ -2,23 +2,20 @@ import QtQuick
 import Quickshell
 import qs.Commons
 
-// The window the atlas panel lives in when it is docked to the bar: a bar popup with its own
-// thin border and rounded corners, placed flush against the bar's outer edge so it never
-// covers the bar, and closed by Esc, the X button or a click outside it.
-//
-// Children are placed inside the frame (default property), so Panel.qml can put its content
-// here and move it to a separate window and back.
+// the popup the atlas lives in when docked: thin border, round corners, flush against
+// the bar's outer edge so it never covers it. closes on esc, x or a click outside.
+// children go inside the frame, so Panel.qml can move its content to a window and back
 PopupWindow {
     id: root
 
     property bool open: false                 // follows Panel.opened
     property var anchorItem: null
-    property bool vertical: false             // bar is on the left / right edge
+    property bool vertical: false             // bar on the left / right edge
     property real wantedWidth: 1180
     property real wantedHeight: 760
     property color borderColor: "#33ffffff"
     property real frameRadius: 12
-    property var focusTarget: null            // item that should get the keyboard when shown
+    property var focusTarget: null            // gets the keyboard when shown
     signal closeRequested()
 
     default property alias content: holder.data
@@ -26,27 +23,23 @@ PopupWindow {
     readonly property real contentWidth: Math.max(480, Math.min(wantedWidth, screenW - 40))
     readonly property real contentHeight: Math.min(wantedHeight, maxHeight)
 
-    // ---- placement: never overlap the bar -----------------------------------------
-    // Worked out each time the panel is about to open (see onOpenChanged), because the
-    // bar's position is not known yet when this file is first loaded.
-    //
-    // The panel is anchored to the outer edge of the bar's own window (not to the
-    // widget, which sits inside the bar's padding), and the gap is transparent
-    // padding inside the popup window, so it works whatever the compositor does
-    // with anchor margins.
-    property var barObject: null              // the shell's bar, used as a hint for its edge
-    property bool barAtTop: true              // horizontal bar: top edge (else bottom)
-    property bool barAtLeft: true             // vertical bar: left edge (else right)
+    // placement, never over the bar
+    // worked out every time it opens, the bar's position isn't known yet at load.
+    // anchored to the bar window's outer edge (not the widget inside its padding), and the gap
+    // is transparent padding in the popup, so it works whatever the compositor does with margins
+    property var barObject: null              // the shell's bar, hint for its edge
+    property bool barAtTop: true              // horizontal bar: top (else bottom)
+    property bool barAtLeft: true             // vertical bar: left (else right)
     property bool useRect: false              // anchor to the bar window's edge
     property var anchorWin: null
     property real rectX: 0
     property real rectY: 0
     property real rectW: 1
     property real rectH: 1
-    property real extra: 0                    // extra clearance when only the widget is known
+    property real extra: 0                    // extra room when only the widget is known
     property real screenW: 1920
     property real maxHeight: 620
-    readonly property int gap: 0              // free space between the bar and the panel (0 = flush)
+    readonly property int gap: 0              // gap between bar and panel (0 = flush)
     readonly property real padTop: (!vertical && barAtTop) ? gap + extra : 0
     readonly property real padBottom: (!vertical && !barAtTop) ? gap + extra : 0
     readonly property real padLeft: (vertical && barAtLeft) ? gap + extra : 0
@@ -72,7 +65,7 @@ PopupWindow {
         var qsWin = null
         var win = null
 
-        // 1. the bar window knows which edges it is attached to
+        // 1. the bar window knows its edges
         try { qsWin = item.QsWindow.window } catch (e0) { qsWin = null }
         try { win = qsWin ? qsWin : item.Window.window } catch (e1) { win = null }
         try {
@@ -88,7 +81,7 @@ PopupWindow {
             }
         } catch (e2) { side = "" }
 
-        // 2. the shell's bar object may say it outright
+        // 2. the bar object may just say it
         if (side === "" && root.barObject) {
             var names = ["position", "barPosition", "edge", "side", "location", "placement", "barSide"]
             for (var i = 0; i < names.length && side === ""; i++) {
@@ -100,8 +93,7 @@ PopupWindow {
             }
         }
 
-        // 3. last resort: which half of the screen (only meaningful when the bar
-        //    window is as big as the screen)
+        // 3. last resort: which half of the screen (only useful when the bar window is screen sized)
         var pos = item.mapToItem(null, 0, 0)
         if (side === "") {
             if (root.vertical) side = pos.x < sw / 2 ? "left" : "right"
@@ -110,7 +102,7 @@ PopupWindow {
         root.barAtTop = side === "top"
         root.barAtLeft = side === "left"
 
-        // Anchor rectangle on the bar window's outer edge (window coordinates).
+        // anchor rect on the bar window's outer edge (window coords)
         var ww = (win && win.width > 0) ? win.width : 0
         var wh = (win && win.height > 0) ? win.height : 0
         var small = root.vertical ? (ww > 0 && ww < sw * 0.5) : (wh > 0 && wh < sh * 0.5)
@@ -130,10 +122,10 @@ PopupWindow {
             }
             root.extra = 0
         } else {
-            root.extra = 6                    // only the widget is known: allow a little for bar padding
+            root.extra = 6                    // only the widget is known: allow a bit for bar padding
         }
 
-        // Tallest the panel may be and still fit between the bar and the far edge.
+        // tallest it can be and still fit between the bar and the far edge
         var thick = (!root.vertical && wh > 0 && wh < sh * 0.5) ? wh : 40
         var room = root.vertical ? sh - 40 : sh - thick - root.gap - root.extra - 16
         root.maxHeight = Math.max(300, room)
@@ -141,9 +133,9 @@ PopupWindow {
 
     function justClosed() { return Date.now() - root.grabClosedAt < 500 }
 
-    // ---- click outside to close -----------------------------------------------------
-    // Hyprland's focus grab reports any click outside the panel. It is created at
-    // runtime so a shell without that module simply keeps the X button and Esc.
+    // click outside to close
+    // hyprland's focus grab reports clicks outside. made at runtime, so a shell without
+    // that module just keeps x and esc
     property var grab: null
     property double grabClosedAt: 0
     property double shownAt: 0
@@ -161,9 +153,8 @@ PopupWindow {
                 'import Quickshell.Hyprland\nHyprlandFocusGrab { }', root, "OmatravelFocusGrab")
             g.windows = [root]
             g.cleared.connect(function() {
-                // A grab lost right after opening is the compositor settling focus (for
-                // example the pop-out window closing on an empty workspace), not a click
-                // outside: keep the panel open and arm the grab again.
+                // grab lost right after opening = compositor settling focus (like the pop-out window
+                // closing on an empty workspace), not a click outside. keep it open, grab again
                 if (root.open && Date.now() - root.shownAt < 600) {
                     regrabTimer.restart()
                     return
@@ -179,7 +170,7 @@ PopupWindow {
     }
 
 
-    // ---- window geometry -------------------------------------------------------
+    // window geometry
     visible: false
     color: "transparent"
     implicitWidth: contentWidth + root.padLeft + root.padRight
@@ -191,12 +182,12 @@ PopupWindow {
     anchor.rect.y: root.rectY
     anchor.rect.width: root.rectW
     anchor.rect.height: root.rectH
-    // The panel opens on the side of the anchor facing away from the bar.
+    // opens on the side of the anchor away from the bar
     anchor.edges: root.vertical ? (root.barAtLeft ? Edges.Right : Edges.Left)
                                 : (root.barAtTop ? Edges.Bottom : Edges.Top)
     anchor.gravity: root.vertical ? (root.barAtLeft ? Edges.Right : Edges.Left)
                                   : (root.barAtTop ? Edges.Bottom : Edges.Top)
-    // Only slide along the bar, never across it, so the panel can't be pushed onto the bar.
+    // only slide along the bar, never across, so it can't end up on the bar
     anchor.adjustment: root.vertical ? PopupAdjustment.SlideY : PopupAdjustment.SlideX
 
     onOpenChanged: {
@@ -231,7 +222,7 @@ PopupWindow {
             clip: true
         }
 
-        Rectangle {                           // the thin border, drawn over the content
+        Rectangle {                           // thin border, drawn over the content
             anchors.fill: parent
             z: 10
             color: "transparent"

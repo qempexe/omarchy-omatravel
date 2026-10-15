@@ -1,17 +1,11 @@
 import QtQuick
 import Quickshell.Io
 
-// Minimal themed text field (no dependency on QtQuick.Controls or shell styles).
-//
-// Not a TextInput on purpose. QQuickTextInput connects to the clipboard in its
-// constructor and re-reads foreign clipboard data on every clipboard change (to
-// update canPaste), with no size or time limit and no way to turn it off. The
-// atlas panel stays loaded while hidden, so every TextInput in it would keep
-// doing that in the background. This field draws a plain Text and handles keys
-// itself, so no clipboard connection exists. Paste only happens on an explicit
-// Ctrl+V / Shift+Insert, through a fixed command that reads at most
-// `pasteMaxBytes` within 2 seconds.
-// Not supported (by design): IME composition, copy/cut, mouse selection.
+// small themed text field, no QtQuick.Controls.
+// not a TextInput on purpose: those hook the clipboard and keep reading it in the background,
+// and this panel stays loaded while hidden. so: plain Text + own key handling.
+// paste only on ctrl+v / shift+insert, max pasteMaxBytes, 2s timeout.
+// no IME, no copy/cut, no mouse selection
 Rectangle {
     id: box
 
@@ -32,7 +26,7 @@ Rectangle {
     function forceFocus() { field.forceActiveFocus() }
     function clear() { text = ""; cursorPosition = 0; selectAll = false }
 
-    // Insert plain single-line text at `pos` (replaces everything after select-all).
+    // insert single-line text at pos (replaces everything after select-all)
     function insert(pos, str) {
         var t = String(str === null || str === undefined ? "" : str)
             .split(/\r?\n/)[0]
@@ -65,7 +59,7 @@ Rectangle {
         cursorPosition = Math.max(0, Math.min(text.length, cursorPosition))
     }
 
-    // Text set from outside (e.g. a suggestion chip) keeps the caret in range.
+    // text set from outside (a suggestion chip) keeps the caret in range
     onTextChanged: clampCursor()
 
     implicitHeight: 34
@@ -74,7 +68,7 @@ Rectangle {
     border.width: 1
     border.color: focused ? accent : Qt.rgba(foreground.r, foreground.g, foreground.b, 0.18)
 
-    // Bounded, explicit-only paste. One read at a time; extra requests are dropped.
+    // bounded paste, explicit only, one at a time
     Process {
         id: pasteProc
         running: false
@@ -100,7 +94,7 @@ Rectangle {
         activeFocusOnTab: true
         clip: true
 
-        // Keep the caret visible when the text is wider than the field.
+        // keep the caret visible on long text
         readonly property real caretX: fm.advanceWidth(box.text.substring(0, box.cursorPosition))
         readonly property real shift: Math.max(0, caretX - width + 2)
 
@@ -151,7 +145,7 @@ Rectangle {
 
         MouseArea {
             anchors.fill: parent
-            acceptedButtons: Qt.LeftButton      // middle / right: ignored, nothing pastes
+            acceptedButtons: Qt.LeftButton      // middle / right click: ignored, nothing pastes
             cursorShape: Qt.IBeamCursor
             onPressed: function(mouse) {
                 field.forceActiveFocus()
@@ -189,7 +183,7 @@ Rectangle {
             case Qt.Key_End: box.selectAll = false; box.cursorPosition = box.text.length; event.accepted = true; return
             default: break
             }
-            // Printable characters only; leave shortcuts (Esc, Alt+arrows...) to the panel.
+            // printable chars only, shortcuts (esc, alt+arrows...) go to the panel
             if (!ctrl && !(mods & Qt.AltModifier) && !(mods & Qt.MetaModifier)
                     && event.text.length > 0 && event.text.charCodeAt(0) >= 32
                     && event.text.charCodeAt(0) !== 127) {

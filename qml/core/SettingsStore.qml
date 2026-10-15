@@ -2,10 +2,9 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 
-// Local overrides for widget settings, kept in memory (instant) and saved to
-// settings.json in the state dir (survives restarts). Local overrides win over
-// setting(...). Nothing is sent to `omarchy bar set`: that rewrites the shell
-// config and makes the whole shell reload and freeze.
+// my own settings, in memory (instant) and in settings.json in the state dir.
+// they win over setting(...). nothing goes to `omarchy bar set`, that rewrites
+// the shell config and the whole shell reloads and freezes
 Item {
     id: root
 
@@ -17,15 +16,13 @@ Item {
     property var values: ({})
     property bool loaded: false
 
-    // Edits made before settings.json has been read. They are kept in memory
-    // and merged over the file once it loads, so a very early write (for
-    // example a refresh finishing at startup) can never replace the
-    // saved settings with a nearly empty file.
+    // edits made before settings.json is read. merged over the file once it loads,
+    // so an early write can't replace the saved settings with an almost empty file
     property var pending: ({})
     property bool pendingAll: false     // a reset happened before the first load
 
     signal changed()
-    // Which key was just edited ("*" = many keys or an external edit).
+    // key that just changed ("*" = many, or edited outside)
     signal keyChanged(string key)
 
     function get(key) {
@@ -58,7 +55,7 @@ Item {
         keyChanged("*")
     }
 
-    // Back to the given defaults (stored explicitly, so nothing else shows through).
+    // back to the given defaults (stored explicitly, so nothing else shows through)
     function resetAll(defaults) {
         var next = {}
         for (var k in defaults) next[k] = defaults[k]
@@ -69,20 +66,16 @@ Item {
         keyChanged("*")
     }
 
-    // The last few texts we wrote ourselves. The file watcher reports each of our
-    // own writes back a moment later; absorbing such an echo would roll the
-    // settings back to an older state (a slider drag would stutter or jump back),
-    // so echoes are recognised and skipped.
+    // last few texts we wrote. the watcher reports our own writes back a moment later,
+    // taking those in would roll settings back (sliders jumping), so they're skipped
     property var recent: []
 
-    // Disk writes are coalesced: the UI reads `values` from memory, so nothing
-    // has to hit the disk per tick of a slider drag.
+    // writes are batched, the ui reads values from memory, no disk write per slider tick
     property bool dirty: false
 
     property double lastWrite: 0
 
-    // First change is written right away (so a click can never be lost); a burst
-    // of changes after it is written once, shortly after the last one.
+    // first change goes out right away (a click is never lost), a burst after it once at the end
     function persist() {
         dirty = true
         if (!loaded) return              // written right after the file is read
@@ -105,9 +98,8 @@ Item {
     function absorb(text) {
         var raw = String(text || "")
         if (loaded) {
-            // While our own write is pending or still settling, whatever the file
-            // watcher reports is ours (it can even be a half-written or empty
-            // file). Taking it in would flash the old values back.
+            // while our own write is pending or settling, whatever the watcher reports is ours
+            // (can even be half written). taking it would flash old values back
             if (dirty || writeTimer.running || echoTimer.running) return
             if (recent.indexOf(raw) >= 0) return
         }
@@ -118,7 +110,7 @@ Item {
         } catch (e) { }
         var wasLoaded = loaded
         if (!wasLoaded) {
-            // First read: saved file + anything edited before it arrived.
+            // first read: saved file + whatever was edited before it arrived
             var merged = {}
             if (!pendingAll && next !== null)
                 for (var fk in next) merged[fk] = next[fk]
@@ -140,7 +132,7 @@ Item {
         }
         if (next === null) return                  // empty or unreadable: keep what we have
         if (JSON.stringify(next) === JSON.stringify(values)) return
-        values = next                              // edited elsewhere (another bar, by hand)
+        values = next                              // edited somewhere else (another bar, by hand)
         if (wasLoaded) {
             changed()
             keyChanged("*")
@@ -152,7 +144,7 @@ Item {
 
     Process {
         id: mkdir
-        command: ["mkdir", "-p", root.stateDir]
+        command: ["sh", "-c", 'umask 077; mkdir -p "$1" && chmod 700 "$1"', "sh", root.stateDir]
         onExited: file.reload()
     }
 
@@ -164,12 +156,11 @@ Item {
         path: root.path
         watchChanges: true
         onFileChanged: reload()
-        // text is a function in FileView, so it must be called: passing `text`
-        // itself handed absorb() the function, never the file, and the saved
-        // settings were never read back.
+        // text is a function on FileView, so call it. passing `text` gave absorb() the function
+        // and the saved settings never came back
         onTextChanged: root.absorb(text())
         onLoaded: root.absorb(text())
-        // No file yet (first run): nothing to restore, but start saving.
+        // no file yet (first run): nothing to restore, just start saving
         onLoadFailed: function(error) { root.absorb("") }
     }
 }

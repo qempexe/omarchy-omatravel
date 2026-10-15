@@ -1,7 +1,6 @@
 import QtQuick
 
-// Themed button. Flat by default; `outlined` gives the rounded pill look
-// (used for tabs, toggles and chips). `dotColor` adds a small colour dot.
+// flat button. outlined = rounded pill (tabs, toggles, chips). dotColor adds a small dot
 Rectangle {
     id: btn
 

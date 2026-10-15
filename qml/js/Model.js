@@ -1,6 +1,6 @@
 .pragma library
 
-// ───────────────────────── themes ─────────────────────────
+// themes
 var DEFAULT_THEMES = {
     omarchy:       { text: "#e8dcc8", background: "#1a1815", accent: "#d4a35a" },
     "tokyo-night": { text: "#c0caf5", background: "#1a1b26", accent: "#7aa2f7" },
@@ -14,8 +14,8 @@ var DEFAULT_THEMES = {
     mono:          { text: "#e0e0e0", background: "#141414", accent: "#aaaaaa" }
 };
 
-// ───────────────────────── countries ─────────────────────────
-// ISO-3166 alpha-2 | canonical name | aliases (";"-separated)
+// countries
+// iso code | name | aliases (; separated)
 var _COUNTRY_TABLE = [
 "AF|Afghanistan","AX|Åland Islands|aland","AL|Albania","DZ|Algeria","AS|American Samoa","AD|Andorra","AO|Angola",
 "AI|Anguilla","AQ|Antarctica","AG|Antigua and Barbuda|antigua","AR|Argentina","AM|Armenia","AW|Aruba","AU|Australia",
@@ -71,7 +71,7 @@ function fold(s) {
 
 function _init() {
     if (_byName) return;
-    _byName = {}; _byCode = {};
+    _byName = Object.create(null); _byCode = Object.create(null);
     for (var i = 0; i < _COUNTRY_TABLE.length; i++) {
         var p = _COUNTRY_TABLE[i].split("|");
         var cc = p[0];
@@ -97,7 +97,7 @@ function countryCode(name) {
 
 function countryName(code) { _init(); return _byCode[String(code).toUpperCase()] || ""; }
 
-// Canonical display name for something the user typed ("uk" -> "United Kingdom").
+// display name for what you typed ("uk" -> "United Kingdom")
 function canonicalCountry(name) {
     var t = String(name === undefined || name === null ? "" : name).trim();
     var cc = countryCode(t);
@@ -138,7 +138,7 @@ function flagEmoji(country) {
          + String.fromCodePoint(0x1F1E6 + code.charCodeAt(1) - 65);
 }
 
-// English / common names the GeoNames local-name index doesn't contain.
+// english / common names the geonames index doesn't have
 var _CITY_ALIASES = {
     "ghent|be": "gent", "bruges|be": "brugge", "louvain|be": "leuven", "malines|be": "mechelen",
     "cologne|de": "koln", "hanover|de": "hannover",
@@ -150,7 +150,7 @@ var _CITY_ALIASES = {
     "kiev|ua": "kyiv", "rangoon|mm": "yangon", "mexico|mx": "mexico city"
 };
 
-// Candidate keys into data/layers/index.json ("folded city|cc"), best first.
+// keys into data/layers/index.json ("folded city|cc"), best first
 function indexKeys(city, country) {
     var cc = countryCode(country);
     if (!cc) return [];
@@ -166,7 +166,41 @@ function indexKey(city, country) {
     return k.length ? k[0] : "";
 }
 
-// ───────────────────────── store ─────────────────────────
+// store
+function _reserved(k) { return k === "__proto__" || k === "prototype" || k in Object.prototype; }
+function _own(o, k) { return Object.prototype.hasOwnProperty.call(o, k); }
+
+// one line, no control chars, not too long, and never a built-in object key
+function cleanName(s, max) {
+    s = String(s === undefined || s === null ? "" : s).replace(/[\u0000-\u001f\u007f]/g, " ")
+        .replace(/\s+/g, " ").trim().slice(0, max || 80).trim();
+    return s && !_reserved(s) ? s : "";
+}
+
+// saved keys are kept as they are, only junk is dropped
+function _okKey(k) {
+    return typeof k === "string" && k.length > 0 && k.length <= 200
+        && !/[\u0000-\u001f\u007f]/.test(k) && !_reserved(k);
+}
+
+function _cleanMap(o) {
+    var out = {};
+    if (!o || typeof o !== "object" || Array.isArray(o)) return out;
+    var keys = Object.keys(o);
+    for (var i = 0; i < keys.length; i++)
+        if (_okKey(keys[i])) out[keys[i]] = o[keys[i]];
+    return out;
+}
+
+function _cleanList(a) {
+    var out = [];
+    if (!Array.isArray(a)) return out;
+    for (var i = 0; i < a.length; i++) {
+        if (_okKey(a[i]) && out.indexOf(a[i]) === -1) out.push(a[i]);
+    }
+    return out;
+}
+
 function _emptyProfile() { return { countries: {}, wishlist: {} }; }
 
 function _empty() {
@@ -174,36 +208,39 @@ function _empty() {
              theme: "auto", display: {} };
 }
 
-// Make any parsed value safe to read and mutate.
+// make whatever was parsed safe to read and change
 function sanitize(store) {
     if (!store || typeof store !== "object" || Array.isArray(store)) return _empty();
-    if (!store.profiles || typeof store.profiles !== "object") store.profiles = {};
+    store.profiles = _cleanMap(store.profiles);
     for (var name in store.profiles) {
         var p = store.profiles[name];
-        if (!p || typeof p !== "object") p = store.profiles[name] = _emptyProfile();
-        if (!p.countries || typeof p.countries !== "object") p.countries = {};
-        if (!p.wishlist || typeof p.wishlist !== "object") p.wishlist = {};
+        if (!p || typeof p !== "object" || Array.isArray(p)) p = store.profiles[name] = _emptyProfile();
+        p.countries = _cleanMap(p.countries);
+        p.wishlist = _cleanMap(p.wishlist);
         for (var c in p.countries) {
             var cd = p.countries[c];
-            if (!cd || typeof cd !== "object") cd = p.countries[c] = {};
-            if (!Array.isArray(cd.cities)) cd.cities = [];
-            if (!cd.city_meta || typeof cd.city_meta !== "object") cd.city_meta = {};
-            for (var city in cd.city_meta) _normalizeVisits(cd.city_meta[city]);
+            if (!cd || typeof cd !== "object" || Array.isArray(cd)) cd = p.countries[c] = {};
+            cd.cities = _cleanList(cd.cities);
+            cd.city_meta = _cleanMap(cd.city_meta);
+            for (var city in cd.city_meta) {
+                if (!cd.city_meta[city] || typeof cd.city_meta[city] !== "object") delete cd.city_meta[city];
+                else _normalizeVisits(cd.city_meta[city]);
+            }
         }
-        for (var w in p.wishlist) if (!Array.isArray(p.wishlist[w])) p.wishlist[w] = [];
+        for (var w in p.wishlist) p.wishlist[w] = _cleanList(p.wishlist[w]);
     }
-    if (!store.profiles["default"]) store.profiles["default"] = _emptyProfile();
-    if (!store.profiles[store.activeProfile]) store.activeProfile = "default";
-    if (store.theme !== "auto" && !DEFAULT_THEMES[store.theme]) store.theme = "auto";
-    if (!store.display || typeof store.display !== "object") store.display = {};
+    if (!_own(store.profiles, "default")) store.profiles["default"] = _emptyProfile();
+    if (typeof store.activeProfile !== "string" || !_own(store.profiles, store.activeProfile)) store.activeProfile = "default";
+    if (store.theme !== "auto" && !(typeof store.theme === "string" && _own(DEFAULT_THEMES, store.theme))) store.theme = "auto";
+    if (!store.display || typeof store.display !== "object" || Array.isArray(store.display)) store.display = {};
     return store;
 }
 
-// A city can be visited many times: city_meta[city].visits = ["2019-05", "2023-08-02", ...]
-// (sorted oldest first). Old saves had a single `date`; fold it into `visits`.
+// a city can have many visits: city_meta[city].visits = ["2019-05", "2023-08-02", ...], oldest first.
+// old saves had one `date`, fold it in
 function _normalizeVisits(meta) {
     if (!meta || typeof meta !== "object") return;
-    var raw = Array.isArray(meta.visits) ? meta.visits.slice() : [];
+    var raw = Array.isArray(meta.visits) ? meta.visits.slice(0, 500) : [];
     if (meta.date) raw.push(meta.date);
     delete meta.date;
     var seen = {}, out = [];
@@ -264,7 +301,7 @@ function wishlistRows(store) {
 
 function profileNames(store) { return Object.keys(store.profiles || {}).sort(); }
 function themeNames() { return Object.keys(DEFAULT_THEMES).sort(); }
-// "auto" = follow the live Omarchy theme (`system` = parseSystemTheme() result, or null).
+// "auto" = follow the live omarchy theme (system = parseSystemTheme() or null)
 function themeColor(name, system) {
     if (name === "auto") return (system || DEFAULT_THEMES.omarchy).accent;
     return (DEFAULT_THEMES[name] || DEFAULT_THEMES.omarchy).accent;
@@ -274,10 +311,10 @@ function themeFor(store, system) {
     return DEFAULT_THEMES[store.theme] || DEFAULT_THEMES.omarchy;
 }
 
-// ── Omarchy theme reader ─────────────────────────────────────────────────────
-// TravelModel dumps the files of the active Omarchy theme, each introduced by "@@FILE <name>"
-// (and "@@NAME <theme>"). Omarchy versions differ: new ones ship colors.toml, older ones only the
-// per-app files, so every one of them is understood and the first that yields colours wins.
+// omarchy theme reader
+// TravelModel dumps the active theme's files, each after "@@FILE <name>" (and "@@NAME <theme>").
+// new omarchy has colors.toml, older only the per-app files, so all of them are read
+// and the first one with colors wins
 function _hex(v) {
     var m = /^(?:#|0x)?([0-9a-fA-F]{6})(?:[0-9a-fA-F]{2})?$/.exec(String(v).trim());
     return m ? "#" + m[1].toLowerCase() : "";
@@ -350,7 +387,7 @@ function _dist(a, b) {                                  // 0..1 distance between
     return Math.sqrt(s) / 441.67;
 }
 
-// The installed theme whose background is nearest to `bgHex` -> {theme, dist} or null.
+// installed theme with the closest background to bgHex -> {theme, dist} or null
 function closestTheme(list, bgHex) {
     var best = null;
     for (var i = 0; i < list.length; i++) {
@@ -360,11 +397,11 @@ function closestTheme(list, bgHex) {
     return best;
 }
 
-// Plain colors.toml text only (kept for compatibility).
+// plain colors.toml text only (kept for compat)
 function parseSystemTheme(text) { return parseOmarchyTheme("@@FILE colors.toml\n" + text); }
 
-// The bar button and its tooltip are drawn by the shell, which may auto-detect rich text.
-// Neutralise markup in anything user- or file-supplied that is handed to it.
+// the shell draws the bar button and tooltip and may detect rich text,
+// so markup in anything from you or a file is neutralised first
 function plain(s) {
     return String(s === undefined || s === null ? "" : s).replace(/</g, "\u2039").replace(/>/g, "\u203a");
 }
@@ -381,8 +418,8 @@ function display(store) {
     };
 }
 
-// ───────────────────────── date / path helpers ─────────────────────────
-// Accepts YYYY, YYYY-MM or YYYY-MM-DD; returns normalised string or "" if invalid.
+// dates / path
+// takes YYYY, YYYY-MM or YYYY-MM-DD, returns it normalised, "" if empty, null if invalid
 function normalizeDate(s) {
     s = String(s === undefined || s === null ? "" : s).trim();
     if (!s) return "";
@@ -397,14 +434,14 @@ function normalizeDate(s) {
     return out;
 }
 
-// Sort key that places "2019" before "2019-05" before "2019-05-02".
+// sort key: "2019" before "2019-05" before "2019-05-02"
 function dateKey(s) {
     if (!s) return "9999-99-99";
     var p = String(s).split("-");
     return p[0] + "-" + (p[1] || "00") + "-" + (p[2] || "00");
 }
 
-// ───────────────────────── continents ─────────────────────────
+// continents
 var _CONTINENTS = {
     "Africa": "DZ AO BJ BW BF BI CV CM CF TD KM CG CD CI DJ EG GQ ER SZ ET GA GM GH GN GW KE LS LR LY MG MW ML MR MU YT MA MZ NA NE NG RE RW SH ST SN SC SL SO ZA SS SD TZ TG TN UG EH ZM ZW",
     "Asia": "AF AM AZ BH BD BT BN KH CN CY GE HK IN ID IR IQ IL JP JO KZ KP KR KW KG LA LB MO MY MV MN MM NP OM PK PS PH QA SA SG LK SY TW TJ TH TL TR TM AE UZ VN YE IO CX CC",
@@ -416,8 +453,8 @@ var _CONTINENTS = {
 };
 var CONTINENT_NAMES = ["Africa", "Antarctica", "Asia", "Europe", "North America", "Oceania", "South America"];
 
-// Territories and disputed places: they count as visited countries in the list, but not towards the
-// "x of 195" world total (193 UN members + the Holy See + Palestine).
+// territories and disputed places count as visited countries in the list but not toward
+// the "x of 195" total (193 un members + holy see + palestine)
 var _NOT_SOVEREIGN = " AX AS AI AQ AW BM BQ BV IO KY CX CC CK CW FK FO GF PF TF GI GL GP GU GG HM HK IM JE MO MQ YT MS NC NU NF MP PN PR RE BL SH MF PM SX SJ GS TK TC UM VG VI WF EH XK TW ";
 var WORLD_COUNTRIES = 195;
 
@@ -438,7 +475,7 @@ function isSovereign(country) {
     return !!cc && _NOT_SOVEREIGN.indexOf(" " + cc + " ") === -1;
 }
 
-// ───────────────────────── distance, stats, time filter, export ─────────────────────────
+// distance, stats, time filter, export
 var EARTH_KM = 6371.0088;
 
 function haversineKm(lat1, lng1, lat2, lng2) {
@@ -449,7 +486,7 @@ function haversineKm(lat1, lng1, lat2, lng2) {
     return 2 * EARTH_KM * Math.asin(Math.min(1, Math.sqrt(a)));
 }
 
-// Length of the travel path (chronological points with lat/lng), in km.
+// length of the path in km
 function pathDistanceKm(path) {
     var km = 0;
     for (var i = 1; i < path.length; i++)
@@ -462,7 +499,7 @@ function yearOf(date) {
     return m ? parseInt(m[1], 10) : 0;
 }
 
-// Years that have at least one dated visit in the active profile, oldest first.
+// years with at least one dated visit in the active profile, oldest first
 function visitYears(store) {
     var cs = activeProfile(store).countries, seen = {}, out = [];
     for (var c in cs) {
@@ -479,8 +516,8 @@ function visitYears(store) {
     return out;
 }
 
-// Globe points as they looked at the end of `year` (0 = no filter): later visits drop out, and a
-// city whose every visit is later disappears. Undated cities and the wishlist always stay.
+// globe points as they were at the end of `year` (0 = no filter): later visits drop out,
+// a city with only later visits disappears. undated cities and the wishlist always stay
 function filterByYear(points, year) {
     if (!year) return points;
     var out = [];
@@ -495,7 +532,7 @@ function filterByYear(points, year) {
     return out;
 }
 
-// Everything the Stats tab shows. `path` = chronological points with lat/lng (all years).
+// everything the stats tab shows. path = points in order with lat/lng (all years)
 function computeStats(store, path) {
     var prof = activeProfile(store), cs = prof.countries;
     var st = { countries: 0, sovereign: 0, worldPercent: 0, continents: [], continentCount: 0,
@@ -540,14 +577,14 @@ function formatKm(km) {
     return String(Math.round(km)).replace(/\B(?=(\d{3})+(?!\d))/g, ",") + " km";
 }
 
-// CSV cell: quoted when needed; a leading = + - @ is defused so spreadsheets don't run it as a formula.
+// csv cell: quoted when needed, a leading = + - @ is defused so spreadsheets don't run it
 function csvCell(v) {
     var s = String(v === undefined || v === null ? "" : v);
     if (/^[=+\-@\t\r]/.test(s) && !/^-?\d+(\.\d+)?$/.test(s)) s = "'" + s;   // numbers stay numbers
     return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
 }
 
-// One row per city: country, city, status, visits ("2019;2023-08"), lat, lng. `points` supplies coordinates.
+// one row per city: country, city, status, visits ("2019;2023-08"), lat, lng
 function toCsv(store, points) {
     var prof = activeProfile(store), where = {};
     for (var i = 0; i < (points || []).length; i++) where[points[i].kind + "|" + points[i].country + "|" + points[i].name] = points[i];
@@ -576,7 +613,7 @@ function toJson(store, exportedAt) {
                             countries: p.countries, wishlist: p.wishlist }, null, 2) + "\n";
 }
 
-// Safe file-name part for an export ("My trips!" -> "My_trips_").
+// safe file name part for an export ("My trips!" -> "My_trips_")
 function fileSafe(s) {
     return String(s === undefined || s === null ? "" : s).replace(/[^A-Za-z0-9_-]+/g, "_").slice(0, 40) || "profile";
 }

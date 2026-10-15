@@ -1,19 +1,18 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
-import "GlobeProjection.js" as Proj
+import "../js/GlobeProjection.js" as Proj
 
-// Interactive globe: GPU-shaded sphere (shaders/globe.*.qsb) with a Canvas overlay for
-// the chronological path, visited/wishlist pins and zoom-banded place labels.
-// Pure QtQuick — no shell dependencies. The owner supplies data through
-// `points`, `pathPoints` and `bands`, and answers `bandRequested(band)`.
+// the globe: gpu shaded sphere (shaders/globe.*.qsb) + a canvas on top for the path,
+// pins and place labels per zoom band. plain QtQuick, nothing from the shell.
+// data comes in through points, pathPoints and bands, answer bandRequested(band)
 Item {
     id: root
     clip: true
     implicitWidth: 400
     implicitHeight: 400
 
-    // ── view ──────────────────────────────────────────────────────────────────
+    // view
     property real yaw: 0
     property real pitch: 0.35
     property real zoom: 1
@@ -22,14 +21,14 @@ Item {
     readonly property real minZoom: 1
     readonly property real maxZoom: 40
 
-    // ── data ──────────────────────────────────────────────────────────────────
-    property var points: []        // [{lat, lng, name, country, kind: "visited"|"wishlist", date}]
-    property var pathPoints: []    // visited points with dates, chronological
+    // data
+    property var points: []        // [{lat, lng, name, country, kind: visited|wishlist, date}]
+    property var pathPoints: []    // visited points with dates, in order
     property var bands: ({})       // {z0: {lng[], lat[], pop[], name[], cc[]}, ...}
     property bool showPath: true
     property bool showPlaces: true
 
-    // ── theme ─────────────────────────────────────────────────────────────────
+    // theme
     property color accent: "#d4a35a"
     property color wishlistColor: "#cba6f7"
     property color textColor: "#e8dcc8"
@@ -38,13 +37,13 @@ Item {
     signal bandRequested(string band)
     signal placeClicked(var place)     // {name, cc, country, lat, lng, kind}
 
-    // ── internals ─────────────────────────────────────────────────────────────
+    // internals
     property real _zoomGoal: 1
     property real _yawVel: 0
     property real _pitchVel: 0
     property bool _dragging: false
     property string _hoverText: ""
-    property var _hits: []             // screen-space picks, rebuilt on every paint
+    property var _hits: []             // screen picks, rebuilt every paint
     readonly property string activeBand: zoom < 1.5 ? "z0" : zoom < 2.6 ? "z1" : zoom < 4.0 ? "z2" : "z3"
     readonly property bool shaderFailed: globe.status === ShaderEffect.Error
 
@@ -58,13 +57,13 @@ Item {
         return "rgba(" + Math.round(c.r * 255) + "," + Math.round(c.g * 255) + ","
                + Math.round(c.b * 255) + "," + a + ")"
     }
-    // QML colour properties don't parse CSS rgba(); only the Canvas does.
+    // qml colors don't parse css rgba(), only the canvas does
     function _qc(c, a) { return Qt.rgba(c.r, c.g, c.b, a) }
     function _fmtPop(p) {
         return p >= 1e6 ? (p / 1e6).toFixed(1) + "M" : p >= 1000 ? Math.round(p / 1000) + "k" : String(p)
     }
 
-    // ── public API ────────────────────────────────────────────────────────────
+    // public api
     function setZoom(z) {
         _zoomGoal = Math.max(minZoom, Math.min(maxZoom, z))
         zoom = _zoomGoal
@@ -86,7 +85,7 @@ Item {
         yawAnim.start(); pitchAnim.start()
     }
 
-    // Centre on the mean of the user's points (or a pleasant default) and zoom out.
+    // center on the middle of your points (or a nice default) and zoom out
     function resetView() {
         var x = 0, y = 0, z = 0, n = 0
         for (var i = 0; i < points.length; i++) {
@@ -98,20 +97,20 @@ Item {
         focusOn(Math.asin(y / len) * 180 / Math.PI, Math.atan2(x, z) * 180 / Math.PI, 1)
     }
 
-    // ── animations ────────────────────────────────────────────────────────────
+    // animations
     NumberAnimation { id: yawAnim;   target: root; property: "yaw";   duration: 550; easing.type: Easing.InOutCubic }
     NumberAnimation { id: pitchAnim; target: root; property: "pitch"; duration: 550; easing.type: Easing.InOutCubic }
     NumberAnimation { id: zoomAnim;  target: root; property: "zoom";  duration: 550; easing.type: Easing.InOutCubic }
     Behavior on zoom { enabled: !zoomAnim.running; NumberAnimation { duration: 140; easing.type: Easing.OutQuad } }
 
-    // ── background + GPU globe ────────────────────────────────────────────────
+    // background + gpu globe
     Rectangle {
         anchors.fill: parent
         radius: 8
         color: root._mix(root.bgColor, Qt.rgba(0, 0, 0, 1), 0.45)
     }
 
-    // Plain disc shown if the shader can't be compiled or used on this backend.
+    // plain disc if the shader can't be used on this backend
     Rectangle {
         visible: root.shaderFailed
         width: root.radius * 2; height: width; radius: width / 2
@@ -122,7 +121,7 @@ Item {
 
     Image {
         id: earthImg
-        source: Qt.resolvedUrl("assets/earth.png")
+        source: Qt.resolvedUrl("../../assets/earth.png")
         sourceSize: Qt.size(4096, 2048)
         asynchronous: true
         smooth: true
@@ -156,11 +155,11 @@ Item {
         property color atmoColor:   root.accent
         property vector4d strength: Qt.vector4d(0.55, 0.28, 0.85, 0)
         property var earth: earthTex
-        vertexShader: Qt.resolvedUrl("shaders/globe.vert.qsb")
-        fragmentShader: Qt.resolvedUrl("shaders/globe.frag.qsb")
+        vertexShader: Qt.resolvedUrl("../../shaders/globe.vert.qsb")
+        fragmentShader: Qt.resolvedUrl("../../shaders/globe.frag.qsb")
     }
 
-    // ── overlay ───────────────────────────────────────────────────────────────
+    // overlay
     Canvas {
         id: overlay
         anchors.fill: parent
@@ -198,7 +197,7 @@ Item {
                 ctx.globalAlpha = 1
             }
 
-            // 1 ─ chronological path ─────────────────────────────────────────
+            // 1. the path
             var pp = root.pathPoints
             if (root.showPath && pp && pp.length > 1) {
                 ctx.lineCap = "round"
@@ -208,7 +207,7 @@ Item {
                     var a = pp[i - 1], b = pp[i]
                     if (a.lat === b.lat && a.lng === b.lng) continue          // same city again: no leg
                     var gc = Proj.greatCircle(a.lat, a.lng, b.lat, b.lng, 3)
-                    // Travelling a route that was already drawn? Bow it sideways so both stay visible.
+                    // route already drawn? bow it sideways so both stay visible
                     var pk = a.lat < b.lat || (a.lat === b.lat && a.lng < b.lng)
                            ? a.lat + "," + a.lng + ">" + b.lat + "," + b.lng
                            : b.lat + "," + b.lng + ">" + a.lat + "," + a.lng
@@ -264,7 +263,7 @@ Item {
                 }
             }
 
-            // 2 ─ the user's pins (collected first so labels avoid them) ──────
+            // 2. your pins (collected first so labels avoid them)
             var pts = root.points || []
             var pins = []
             var order = {}
@@ -281,7 +280,7 @@ Item {
                 placed.push([P.x - 6, P.y - 6, P.x + 6, P.y + 6])
             }
 
-            // 3 ─ zoom-banded places ──────────────────────────────────────────
+            // 3. places per zoom band
             var places = []
             if (root.showPlaces) {
                 var bandName = root.activeBand
@@ -291,7 +290,7 @@ Item {
                 }
                 if (!root._requested.z0) { root._requested.z0 = true; root.bandRequested("z0") }
 
-                // best loaded band at or below the wanted detail
+                // best loaded band at or below the detail we want
                 var order3 = ["z3", "z2", "z1", "z0"]
                 var use = ""
                 for (var bi = order3.indexOf(bandName); bi < 4; bi++)
@@ -302,7 +301,7 @@ Item {
                     var ci = root._cellIndex[use]
                     if (!ci) { ci = root._buildCells(band); root._cellIndex[use] = ci }
 
-                    // Which cells can be on screen?
+                    // which cells can be on screen
                     var hd = Math.sqrt(cx * cx + cy * cy)
                     var vang = hd >= R ? Math.PI / 2 : Math.asin(hd / R)
                     var cosLim = Math.cos(Math.min(Math.PI / 2, vang + 0.08))
@@ -314,7 +313,7 @@ Item {
                         if (ci.vx[c] * cv.x + ci.vy[c] * cv.y + ci.vz[c] * cv.z >= cosLim)
                             cand.push.apply(cand, ci.cells[c])
                     }
-                    cand.sort(function(m, n) { return m - n })      // row order == population desc
+                    cand.sort(function(m, n) { return m - n })      // rows are sorted by population
 
                     var maxLabels = Math.min(600, Math.round(16 + 30 * (root.zoom - 1)))
                     var lat = band.lat, lng = band.lng, name = band.name, pop = band.pop, cc = band.cc
@@ -343,7 +342,7 @@ Item {
                 }
             }
 
-            // 4 ─ draw the pins on top ────────────────────────────────────────
+            // 4. pins on top
             for (var d = 0; d < pins.length; d++) {
                 var pin = pins[d], pt = pin.pt
                 var col = pt.kind === "wishlist" ? root.wishlistColor : root.accent
@@ -355,14 +354,14 @@ Item {
                 ctx.lineWidth = 1.5
                 ctx.strokeStyle = bgCss
                 ctx.stroke()
-                if (pt.kind === "wishlist") {            // hollow centre marks "not yet"
+                if (pt.kind === "wishlist") {            // hollow = not yet
                     ctx.beginPath(); ctx.arc(pin.x, pin.y, rr * 0.4, 0, 2 * Math.PI)
                     ctx.fillStyle = bgCss; ctx.fill()
                 }
                 if (pin.z > 0.2 && (root.zoom >= 1.25 || pins.length <= 14)) {
                     var ptxt = pt.name + (pt.kind === "visited" && pt.visitCount > 1 ? " ×" + pt.visitCount : "")
                     var lw = ptxt.length * 6.4 + 2
-                    var lx = pin.x + rr + 3                       // try right of the pin, then left
+                    var lx = pin.x + rr + 3                       // right of the pin, else left
                     if (!free(lx, pin.y - 8, lx + lw, pin.y + 5)) lx = pin.x - rr - 3 - lw
                     if (free(lx, pin.y - 8, lx + lw, pin.y + 5) && lx > 2 && lx + lw < w - 2) {
                         placed.push([lx, pin.y - 8, lx + lw, pin.y + 5])
@@ -399,7 +398,7 @@ Item {
         return { cells: cells, vx: vx, vy: vy, vz: vz }
     }
 
-    // Tooltip text for one of the user's pins; long visit lists are trimmed to the latest few.
+    // tooltip for one of your pins, long visit lists trimmed to the latest few
     function _pinText(hit) {
         var v = hit.visits || [], o = hit.orders || [], t = ""
         if (o.length) t += "#" + (o.length > 5 ? o.slice(0, 2).join(" #") + " … #" + o[o.length - 1] : o.join(" #")) + "  "
@@ -418,13 +417,13 @@ Item {
         for (var i = 0; i < _hits.length; i++) {
             var hh = _hits[i]
             var dx = hh.x - mx, dy = hh.y - my
-            var d2 = dx * dx + dy * dy - (hh.kind === "place" ? 0 : 36)   // user pins win ties
+            var d2 = dx * dx + dy * dy - (hh.kind === "place" ? 0 : 36)   // your pins win ties
             if (d2 <= bd) { bd = d2; best = hh }
         }
         return best
     }
 
-    // ── repaint triggers ──────────────────────────────────────────────────────
+    // repaint triggers
     onYawChanged: overlay.requestPaint()
     onPitchChanged: overlay.requestPaint()
     onZoomChanged: overlay.requestPaint()
@@ -440,21 +439,21 @@ Item {
     onHeightChanged: overlay.requestPaint()
     Component.onCompleted: { resetView(); overlay.requestPaint() }
 
-    // GPU textures belong to one window. When the panel is popped out into its own window
-    // (or docked back) the earth mask has to be re-rendered there, or the globe shows no land.
+    // gpu textures belong to one window. popping out (or docking back) needs the earth
+    // mask rendered again there, or the globe has no land
     onWindowChanged: function(win) {
         if (!win) return
         earthTex.scheduleUpdate()
         overlay.requestPaint()
         refreshTimer.restart()
     }
-    Timer {                       // once more after the new window has had its first frame
+    Timer {                       // once more after the new window's first frame
         id: refreshTimer
         interval: 150
         onTriggered: { earthTex.scheduleUpdate(); overlay.requestPaint() }
     }
 
-    // ── tooltip ───────────────────────────────────────────────────────────────
+    // tooltip
     TextMetrics {
         id: tipMetrics
         text: root._hoverText
@@ -485,7 +484,7 @@ Item {
         }
     }
 
-    // ── zoom controls (one bordered box)
+    // zoom buttons, one bordered box
     Rectangle {
         id: zoomBox
         anchors.right: parent.right
@@ -497,7 +496,7 @@ Item {
         color: root._qc(root.bgColor, 0.92)
         border.width: 1
         border.color: root._qc(root.textColor, 0.14)
-        MouseArea { anchors.fill: parent }          // don't let clicks reach the globe
+        MouseArea { anchors.fill: parent }          // clicks don't reach the globe
         Column {
             anchors.fill: parent
             Repeater {
@@ -550,7 +549,7 @@ Item {
         textFormat: Text.PlainText
     }
 
-    // ── interaction ───────────────────────────────────────────────────────────
+    // interaction
     WheelHandler {
         acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
         onWheel: function(e) { root.zoomBy(Math.pow(1.0016, e.angleDelta.y)) }
@@ -587,7 +586,7 @@ Item {
             }
             var now = Date.now()
             var dt = Math.max(1, now - lastT)
-            // Dragging moves the surface with the cursor: 1 px ≈ 1/radius rad at the centre.
+            // dragging moves the surface with the cursor: 1 px ~ 1/radius rad at the center
             var yd = (m.x - lastX) / root.radius
             var pd = (m.y - lastY) / root.radius
             travelled += Math.abs(m.x - lastX) + Math.abs(m.y - lastY)

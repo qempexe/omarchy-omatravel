@@ -1,9 +1,9 @@
 .pragma library
 
-// Orthographic globe maths. Conventions (shared with shaders/globe.frag):
-//   world vec : x = cos(lat)·sin(lng), y = sin(lat), z = cos(lat)·cos(lng)
-//   view      : yaw about Y, then pitch about X;  centre of screen = (lat = pitch, lng = −yaw)
-//   screen    : x right, y up; visible when z > 0
+// orthographic globe math, same conventions as shaders/globe.frag
+// world:  x = cos(lat)*sin(lng), y = sin(lat), z = cos(lat)*cos(lng)
+// view:   yaw around Y, then pitch around X, screen center = (lat = pitch, lng = -yaw)
+// screen: x right, y up, visible when z > 0
 
 var PI = Math.PI;
 var D2R = PI / 180.0;
@@ -27,8 +27,8 @@ function project(lat, lng, yaw, pitch, cx, cy, radius) {
     return { visible: true, x: cx + r.x * radius, y: cy - r.y * radius, scale: r.z };
 }
 
-// Allocation-free projector for hot loops. Call p(lat, lng) → z (depth; > 0 is
-// visible) and read p.x / p.y (screen px).
+// projector without allocations for hot loops. p(lat, lng) returns z (> 0 = visible),
+// then read p.x / p.y
 function makeProjector(yaw, pitch, cx, cy, radius) {
     var cy_ = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
     var f = function(lat, lng) {
@@ -44,14 +44,14 @@ function makeProjector(yaw, pitch, cx, cy, radius) {
     return f;
 }
 
-// Angular distance (radians) between two lat/lng points.
+// angle (radians) between two lat/lng points
 function angleBetween(lat1, lng1, lat2, lng2) {
     var a = latLngToVec(lat1, lng1), b = latLngToVec(lat2, lng2);
     var d = a.x * b.x + a.y * b.y + a.z * b.z;
     return Math.acos(Math.max(-1, Math.min(1, d)));
 }
 
-// Points along the great circle from A to B (inclusive), at most `maxStepDeg` apart.
+// points on the great circle from A to B (both included), at most maxStepDeg apart
 function greatCircle(lat1, lng1, lat2, lng2, maxStepDeg) {
     var a = latLngToVec(lat1, lng1), b = latLngToVec(lat2, lng2);
     var dot = Math.max(-1, Math.min(1, a.x * b.x + a.y * b.y + a.z * b.z));

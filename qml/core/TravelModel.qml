@@ -1,23 +1,21 @@
 import QtQuick
 import Quickshell
 import Quickshell.Io
-import "Model.js" as Model
+import "../js/Model.js" as Model
 
-// State + persistence for Omatravel. Holds the store (profiles and places); theme and
-// display options come from the settings store (SettingsStore.qml, set by BarWidget),
-// lazily loads the city lookup index and the zoom-band layers, and derives the
-// data the bar button, the panel and the globe bind to.
+// state + saving for omatravel: profiles and places. theme and display options come from
+// the settings store. loads the city index and the zoom layers lazily, and builds what
+// the bar button, the panel and the globe show
 Item {
     id: root
 
-    // ── locations (relative to the plugin, so any install path works) ─────────
+    // paths, relative to the plugin so any install path works
     readonly property string pluginDir: decodeURIComponent(
-        Qt.resolvedUrl(".").toString().replace(/^file:\/\//, "")).replace(/\/$/, "")
-    // Read-only atlas data ships inside the plugin folder...
+        Qt.resolvedUrl("../..").toString().replace(/^file:\/\//, "")).replace(/\/$/, "")
+    // atlas data ships inside the plugin...
     readonly property string layerDir:  pluginDir + "/data/layers"
-    // ...but the user's own data lives OUTSIDE it: Quickshell hot-reloads the whole shell
-    // whenever a file in a watched config/plugin folder changes, so saving into the plugin
-    // folder made every edit restart the bar.
+    // ...but your own data lives outside it. quickshell reloads the whole shell when a file
+    // in a plugin folder changes, so saving in here restarted the bar on every edit
     readonly property string dataDir:  (Quickshell.env("XDG_DATA_HOME")
                                         || (Quickshell.env("HOME") + "/.local/share")) + "/omatravel"
     readonly property string legacyStorePath: pluginDir + "/data/travel-data.json"
@@ -25,8 +23,7 @@ Item {
     readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME") || (Quickshell.env("HOME") + "/.config")
     property bool storeReady: false
 
-    // ── settings (SettingsStore.qml, set by BarWidget.qml) ───────────────────
-    // The popup's own edits win, then the shell's setting() value (`fallbacks`), then the default.
+    // settings: panel edits win, then the shell's setting() (fallbacks), then the default
     property var settings: null
     property var fallbacks: ({})
     function opt(key, dflt) {
@@ -40,7 +37,7 @@ Item {
         return isFinite(n) ? Math.max(lo, Math.min(hi, n)) : dflt
     }
 
-    // ── state ─────────────────────────────────────────────────────────────────
+    // state
     property var store: Model.parseStore("")
     property var layerIndex: ({})
     property bool indexWanted: false
@@ -48,13 +45,13 @@ Item {
     property var wantedBands: ({})
     property var bands: ({})
     property string notice: ""
-    property var shellBg: null              // current shell bar colour (set by Panel)
+    property var shellBg: null              // current bar color (set by Panel)
     property string themeDebug: "reader has not run yet"
-    property var systemTheme: null          // live Omarchy colours, or null if unavailable
+    property var systemTheme: null          // live omarchy colors, null if not available
     property string _lastText: ""
-    property int viewYear: 0                // 0 = all trips; otherwise show the map as of the end of that year
+    property int viewYear: 0                // 0 = all trips, else the map as it was at the end of that year
 
-    // ── derived ───────────────────────────────────────────────────────────────
+    // derived
     readonly property int    countryCount: Model.countryCount(store)
     readonly property int    cityCount:    Model.cityCount(store)
     readonly property var    countries:    _countryRows()
@@ -78,7 +75,7 @@ Item {
     readonly property color  themeAccent:     _theme.accent
     readonly property color  themeText:       _theme.text
     readonly property color  themeBackground: _theme.background
-    // Look and window options (Settings > Look / Window).
+    // look and window options (settings > look / window)
     readonly property var    look: ({
         opacity: clampInt(opt("opacity", 100), 50, 100, 100),
         cornerRadius: clampInt(opt("cornerRadius", 12), 0, 24, 12),
@@ -112,7 +109,7 @@ Item {
     function canonicalCountry(name) { return Model.canonicalCountry(name) }
     function countryNameForCode(cc) { return Model.countryName(cc) }
 
-    // ── lazy data ─────────────────────────────────────────────────────────────
+    // lazy data
     function ensureIndex() { if (!indexWanted) indexWanted = true }
 
     function requestBand(name) {
@@ -140,13 +137,10 @@ Item {
         return null
     }
 
-    // ── private file writes ───────────────────────────────────────────────────
-    // Travel history must never appear in a process command line: argv is readable by
-    // every local user through /proc/<pid>/cmdline, whatever the file permissions are.
-    // So the content goes in on stdin, and argv only carries the target directory and file.
-    // The shell creates an owner-only temp file next to the target (mktemp is 0600 and the
-    // umask covers the directory), fills it from stdin, then renames it into place, so the
-    // target is never readable by others, not even briefly, and is never left half-written.
+    // private writes
+    // travel history never goes on a command line (anyone local can read argv in /proc).
+    // content goes in on stdin, argv only has the dir and file. owner-only temp file next to
+    // the target, filled, then renamed, so it's never readable by others or half written
     readonly property string _privateWriteScript: [
         'umask 077',
         'mkdir -p "$1" && chmod 700 "$1" || exit 1',
@@ -163,7 +157,7 @@ Item {
         proc.running = true
     }
 
-    // ── persistence ───────────────────────────────────────────────────────────
+    // saving
     function _commit(mutator) {
         var clone = Model.sanitize(JSON.parse(JSON.stringify(root.store)))
         mutator(clone)
@@ -177,16 +171,16 @@ Item {
         if (typeof storeFile.setText === "function") {
             storeFile.setText(text)
             permTimer.restart()                     // setText creates the file with the default mode
-        } else {                                    // very old Quickshell
+        } else {                                    // really old quickshell
             _writePrivate(fallbackWriter, root.dataDir, root.storePath, text)
         }
     }
 
     function _say(msg) { notice = msg; noticeTimer.restart() }
 
-    // ── places ────────────────────────────────────────────────────────────────
+    // places
     function addCountry(name) {
-        name = Model.canonicalCountry(name)
+        name = Model.cleanName(Model.canonicalCountry(name))
         if (!name) return
         if (!Model.countryCode(name))
             _say("“" + name + "” isn't a country I know — saved anyway (no flag).")
@@ -201,8 +195,8 @@ Item {
     }
 
     function addCity(country, city, date) {
-        country = Model.canonicalCountry(country)
-        city = String(city || "").trim()
+        country = Model.cleanName(Model.canonicalCountry(country))
+        city = Model.cleanName(city)
         if (!country || !city) { _say("Pick a country (＋) and type a city."); return false }
         var nd = Model.normalizeDate(date)
         if (nd === null) { _say("Date must look like 2019, 2019-05 or 2019-05-02."); return false }
@@ -225,7 +219,7 @@ Item {
                 var v = Model.visitsOf(meta)
                 v.push(nd)
                 meta.visits = v
-                Model.sanitize(s)                  // re-sorts and de-duplicates the visits
+                Model.sanitize(s)                  // re-sorts and de-dupes the visits
             }
         })
         return true
@@ -240,7 +234,7 @@ Item {
         })
     }
 
-    // Remove a single dated visit; the city itself stays on the list.
+    // remove one dated visit, the city stays
     function removeVisit(country, city, date) {
         _commit(function(s) {
             var cd = s.profiles[s.activeProfile].countries[country]
@@ -252,8 +246,8 @@ Item {
     }
 
     function addWishlist(country, city) {
-        country = Model.canonicalCountry(country)
-        city = String(city || "").trim()
+        country = Model.cleanName(Model.canonicalCountry(country))
+        city = Model.cleanName(city)
         if (!country || !city) { _say("Pick a country (＋) and type a city."); return false }
         ensureIndex()
         _commit(function(s) {
@@ -264,8 +258,8 @@ Item {
         return true
     }
 
-    // A wishlist place you have now been to: it moves to your visited cities (add a date afterwards
-    // by adding the city again with one).
+    // wishlist place you've been to now: moves to visited cities
+    // (add a date by adding the city again with one)
     function markVisited(country, city) {
         _commit(function(s) {
             var p = s.profiles[s.activeProfile]
@@ -289,12 +283,12 @@ Item {
         })
     }
 
-    // ── profiles / look ───────────────────────────────────────────────────────
+    // profiles / look
     function createProfile(name) {
-        name = String(name || "").trim()
+        name = Model.cleanName(name, 40)
         if (!name) return
         _commit(function(s) {
-            if (!s.profiles[name]) s.profiles[name] = { countries: {}, wishlist: {} }
+            if (!Object.prototype.hasOwnProperty.call(s.profiles, name)) s.profiles[name] = { countries: {}, wishlist: {} }
             s.activeProfile = name
         })
     }
@@ -308,13 +302,13 @@ Item {
     }
 
     function switchProfile(name) {
-        _commit(function(s) { if (s.profiles[name]) s.activeProfile = name })
+        _commit(function(s) { if (Object.prototype.hasOwnProperty.call(s.profiles, name)) s.activeProfile = name })
     }
 
     function setViewYear(y) { viewYear = (y > 0 && years.indexOf(y) !== -1) ? y : 0 }
 
-    // ── export ────────────────────────────────────────────────────────────────
-    // Writes the active profile to <data dir>/exports/. kind = "csv" | "json".
+    // export
+    // writes the active profile to <data dir>/exports/. kind = csv | json
     function exportData(kind) {
         var stamp = new Date().toISOString().slice(0, 10)
         var text = kind === "json" ? Model.toJson(store, stamp) : Model.toCsv(store, allPoints)
@@ -324,8 +318,8 @@ Item {
         _writePrivate(exporter, dataDir + "/exports", file, text)
     }
 
-    // Older versions kept the theme and display options inside travel-data.json. Copy any
-    // value that differs from its default into the settings store, once, so nothing is lost.
+    // old versions kept theme and display options in travel-data.json.
+    // copy anything that isn't the default into the settings store, once
     property bool _migrated: false
     function migrateLegacy() {
         if (_migrated || !settings || !settings.loaded || !storeReady) return
@@ -347,7 +341,7 @@ Item {
         function onLoadedChanged() { root.migrateLegacy() }
     }
 
-    // Map position of one of the user's cities, or null if it has no pin.
+    // map position of one of your cities, null if it has no pin
     function pointFor(country, city, kind) {
         var pts = allPoints, want = kind || "visited"
         for (var i = 0; i < pts.length; i++)
@@ -357,7 +351,7 @@ Item {
 
     function formatKm(km) { return Model.formatKm(km) }
 
-    // Multi-line tooltip for the bar button.
+    // multi-line tooltip for the bar button
     function tooltipText() {
         var d = display, rows = countries
         var lines = ["Omatravel"]
@@ -371,7 +365,7 @@ Item {
         return lines.map(function(l) { return Model.plain(l) }).join("\n")
     }
 
-    // ── derived data ──────────────────────────────────────────────────────────
+    // derived data
     function _countryRows() {
         var rows = Model.countryRows(store)
         for (var i = 0; i < rows.length; i++) {
@@ -412,8 +406,8 @@ Item {
         return out
     }
 
-    // Every dated visit in chronological order (stable for equal dates), so a city
-    // visited twice appears twice and the path can return to it.
+    // every dated visit in order (stable for equal dates), so a city visited twice
+    // shows up twice and the path can come back to it
     function _buildPath(points) {
         var dated = [], n = 0
         for (var i = 0; i < points.length; i++) {
@@ -430,7 +424,7 @@ Item {
         return dated.map(function(d) { return d.pt })
     }
 
-    // ── files ─────────────────────────────────────────────────────────────────
+    // files
     FileView {
         id: storeFile
         path: root.storeReady ? root.storePath : ""
@@ -445,16 +439,16 @@ Item {
         onLoadFailed: root._write(root.store)      // first run: create the file
     }
 
-    // ── live Omarchy theme ─────────────────────────────────────────────────────
-    // `omarchy-theme-set` deletes and recreates current/theme/, which silently kills any inotify
-    // watch on files inside it. So the colours are re-read with a short-lived `cat` instead:
-    // on start, whenever theme.name changes (that file survives), shortly after (the swap may
-    // still be in flight), on switching to "Follow Omarchy", and on a slow poll while following (the shell recolouring also triggers a re-read).
+    // live omarchy theme
+    // omarchy-theme-set deletes and recreates current/theme/, which kills any inotify watch
+    // inside it. so colors are re-read with a short `cat`: on start, when theme.name changes
+    // (that file survives), a bit after (swap may still be running), when switching to
+    // follow omarchy, and on a slow poll while following
     readonly property string omarchyDir: configHome + "/omarchy/current"
     function _h2(v) { return ("0" + Math.round(v * 255).toString(16)).slice(-2) }
     function refreshSystemTheme() { if (!themeReader.running) themeReader.running = true }
 
-    // Dumps the active theme's files (current/theme, falling back to the named theme's folder).
+    // dump the active theme's files (current/theme, else the named theme's folder)
     Process {
         id: themeReader
         command: ["sh", "-c", [
@@ -506,7 +500,7 @@ Item {
                     : "reader returned nothing (dir: " + root.omarchyDir + ")"
                 var t = null
                 if (text.indexOf("@@THEME") >= 0) {
-                    // No "current theme" marker: choose the installed theme that matches the shell's colours.
+                    // no current theme marker: pick the installed theme that matches the shell's colors
                     var list = Model.parseOmarchyThemes(text), c = root.shellBg
                     if (!c) {
                         root.themeDebug = "scanned " + list.length + " themes, waiting for the shell's colours"
@@ -532,7 +526,7 @@ Item {
         watchChanges: true
         onFileChanged: { reload(); root.refreshSystemTheme(); settleTimer.restart() }
     }
-    onShellBgChanged: refreshSystemTheme()      // the shell recolours itself when the Omarchy theme changes
+    onShellBgChanged: refreshSystemTheme()      // the shell recolors itself when the omarchy theme changes
     Timer { id: settleTimer; interval: 500; onTriggered: root.refreshSystemTheme() }
     Timer {
         interval: 5000
@@ -571,9 +565,8 @@ Item {
     BandLoader { band: "z3"; wanted: root.wantedBands.z3 === true; dir: root.layerDir
                  onBandLoaded: function(b, t) { root._bandLoaded(b, t) } }
 
-    // A process that receives its content on stdin instead of argv (see _writePrivate).
-    // Once started it writes the payload, drops its own copy, and closes stdin so `cat` sees
-    // EOF; Qt flushes the buffered data before the channel actually closes.
+    // process that gets its content on stdin, not argv (see _writePrivate).
+    // writes the payload, drops its copy, closes stdin so cat sees EOF
     component StdinWriter: Process {
         property string payload: ""
         stdinEnabled: false
@@ -585,12 +578,11 @@ Item {
         onExited: payload = ""
     }
 
-    // Create the data dir and, once, copy an old in-plugin save across; only then open the store.
+    // make the data dir, copy an old in-plugin save across once, then open the store
     Process {
         id: ensureDir
         command: ["sh", "-c",
-            // Travel history is personal: owner-only data dir (and exports dir), and an
-            // owner-only store file, including one created by an older build.
+            // travel history is personal: owner-only dirs and file, also ones from older builds
             "umask 077; mkdir -p \"$1\" && chmod 700 \"$1\" && { [ -f \"$2\" ] || { [ -f \"$3\" ] && cp \"$3\" \"$2\"; }; }; " +
             "[ -f \"$2\" ] && chmod 600 \"$2\"; [ -d \"$1/exports\" ] && chmod 700 \"$1/exports\"; true",
             "sh", root.dataDir, root.storePath, root.legacyStorePath]
@@ -598,9 +590,8 @@ Item {
         onExited: root.storeReady = true
     }
     StdinWriter { id: fallbackWriter }
-    // FileView.setText writes with the default umask (0644 on most systems), and its atomic
-    // save may recreate the file. The 0700 data dir already keeps other users out; this
-    // brings the file itself back to 0600 after each save.
+    // setText writes with the default umask and may recreate the file.
+    // the 0700 dir already keeps others out, this puts the file back to 0600 after each save
     Process { id: permFixer; command: ["chmod", "600", root.storePath] }
     Timer {
         id: permTimer

@@ -2,14 +2,10 @@ import QtQuick
 import QtQuick.Layouts
 import Quickshell.Io
 
-// The Settings tab of the atlas (Panel.qml). Everything lives in the same panel.
-//
-//   * Four sections: Bar, Globe, Look, Window.
-//   * A setting with `when` is only shown while its condition holds.
-//   * Every setting is a SettingRow: plain numbers, friendly option names, a
-//     one-line hint, and a reset arrow once it differs from the default.
-//   * Edits are saved at once by SettingsStore.qml and applied everywhere
-//     (bar, atlas, globe) through TravelModel.qml.
+// the settings tab of the atlas. four sections: bar, globe, look, window.
+// a setting with `when` only shows while that holds. every one is a SettingRow with
+// a hint and a reset arrow once changed. saved at once by SettingsStore and applied
+// everywhere through TravelModel
 Item {
     id: root
 
@@ -30,7 +26,7 @@ Item {
     readonly property color panelSolid: Qt.rgba(panelBg.r, panelBg.g, panelBg.b, 1)
     function tint(a) { return Qt.rgba(ink.r, ink.g, ink.b, a) }
 
-    // Keep this list, manifest.json and BarWidget.qml in step (tests/test_manifest.py checks it).
+    // keep this list, manifest.json and BarWidget.qml in sync (tests/test_manifest.py checks)
     readonly property var sections: [
         {
             title: "Bar",
@@ -125,7 +121,7 @@ Item {
         return d
     }
 
-    // Current value: the panel's own edit, then the shell's setting, then the default.
+    // value: panel edit, then the shell's setting, then the default
     function val(key) {
         var fb = root.defaults[key]
         var raw = root.store ? root.store.values[key] : undefined
@@ -137,7 +133,7 @@ Item {
         return fb
     }
 
-    // A setting with `when` only shows while every condition holds.
+    // a setting with `when` only shows while every condition holds
     function shown(item) {
         if (!item.when) return true
         for (var i = 0; i < item.when.length; i++) {
@@ -147,8 +143,8 @@ Item {
         return true
     }
 
-    // The window manager sizes the pop-out window, so width and height do nothing
-    // there. They stay visible, but locked, until the atlas is docked again.
+    // the window manager sizes the pop-out window, so width and height do nothing there.
+    // shown but locked until it's docked again
     function offHere(item) {
         return root.popped && (item.key === "windowWidth" || item.key === "windowHeight")
     }
@@ -172,10 +168,9 @@ Item {
 
     Timer { id: confirmTimer; interval: 2500; onTriggered: root.confirmReset = false }
 
-    // ---- clipboard paste for text fields ---------------------------------------
-    // Native paste is disabled in SettingRow. A paste request runs a fixed command
-    // that reads at most 1 KB from the clipboard, and the text is handed back to the
-    // row that asked. One paste runs at a time; extra requests are dropped.
+    // clipboard paste for text fields
+    // native paste is off in SettingRow. a paste runs a fixed command reading max 1 KB,
+    // the text goes back to the row that asked. one at a time, extra requests dropped
     property var pasteRow: null
     property var pasteTarget: null
 

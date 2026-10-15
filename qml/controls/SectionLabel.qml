@@ -1,6 +1,6 @@
 import QtQuick
 
-// Small, dim, sentence-case heading ("Theme", "Display"…).
+// small dim heading
 Text {
     property color foreground: "#e8dcc8"
     property string fontFamily: ""
