@@ -357,24 +357,19 @@ Panel {
                     border.color: Qt.rgba(root.fg.r, root.fg.g, root.fg.b, 0.08)
                 }
 
-                Rectangle {                          // round badge: ring with a dot
+                Image {                              // the logo, light on a dark panel, dark on a light one
                     id: avatar
                     anchors.left: parent.left
                     anchors.leftMargin: root.gutter + Style.space(12)
                     anchors.verticalCenter: parent.verticalCenter
                     width: Style.space(34)
                     height: width
-                    radius: width / 2
-                    color: root.selectedFill
-                    border.width: 1
-                    border.color: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.7)
-                    Rectangle {
-                        anchors.centerIn: parent
-                        width: Style.space(12)
-                        height: width
-                        radius: width / 2
-                        color: root.accent
-                    }
+                    source: Qt.resolvedUrl((0.299 * root.fg.r + 0.587 * root.fg.g + 0.114 * root.fg.b) > 0.5
+                                           ? "../../assets/logo.png" : "../../assets/logo-dark.png")
+                    sourceSize.width: 96
+                    sourceSize.height: 96
+                    smooth: true
+                    mipmap: true
                 }
 
                 Column {
