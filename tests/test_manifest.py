@@ -37,7 +37,7 @@ assert "setting(it.key, it.fallback)" in bar and "Schema.items" in bar, "BarWidg
 
 for f in ("qml/core/TravelModel.qml", "qml/panel/Panel.qml", "qml/globe/GlobeView.qml", "qml/core/SettingsStore.qml",
           "qml/panel/SettingRow.qml", "qml/panel/SettingsView.qml", "qml/panel/PanelFrame.qml", "qml/panel/AboutPage.qml",
-          "qml/js/Schema.js", "assets/logo.png", "assets/logo-dark.png",
+          "qml/js/Schema.js", "qml/js/Theme.js", "assets/logo.png", "assets/logo-dark.png",
           "qml/js/Model.js", "qml/js/GlobeProjection.js", "manifest.json", "README.md"):
     assert os.path.isfile(os.path.join(root, f)), "missing " + f
 for f in ("assets/earth.png", "data/layers/index.json", "data/layers/z0.json", "data/layers/z3.json"):

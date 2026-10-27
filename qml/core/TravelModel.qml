@@ -2,6 +2,8 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import "../js/Model.js" as Model
+import "../js/Schema.js" as Schema
+import "../js/Theme.js" as Theme
 
 // state + saving for omatravel: profiles and places. theme and display options come from
 // the settings store. loads the city index and the zoom layers lazily, and builds what
@@ -48,6 +50,9 @@ Item {
     property var shellBg: null              // current bar color (set by Panel)
     property string themeDebug: "reader has not run yet"
     property var systemTheme: null          // live omarchy colors, null if not available
+    // the active window border (colors and angle) of the current omarchy theme, for the
+    // outline. no colors when the theme has none or can't be read
+    property var border: ({ colors: [], angle: 0 })
     property string _lastText: ""
     property int viewYear: 0                // 0 = all trips, else the map as it was at the end of that year
 
@@ -80,6 +85,9 @@ Item {
         opacity: clampInt(opt("opacity", 100), 50, 100, 100),
         cornerRadius: clampInt(opt("cornerRadius", 12), 0, 24, 12),
         outline: opt("outline", false) === true || opt("outline", false) === "true",
+        outlineGradient: Schema.clean("outlineGradient", opt("outlineGradient", true)),
+        outlineColor: Schema.clean("outlineColor", opt("outlineColor", "accent")),
+        globeSide: Schema.clean("globeSide", opt("globeSide", "left")),
         surfaceTint: clampInt(opt("surfaceTint", 0), 0, 30, 0),
         fontScale: clampInt(opt("fontScale", 100), 80, 150, 100),
         density: ["compact", "comfortable", "spacious"].indexOf(String(opt("density", "comfortable"))) !== -1
@@ -470,7 +478,7 @@ Item {
             'found=0',
             'for t in "$cur/theme" "$cfg/omarchy/themes/$n" "$data/omarchy/themes/$n" "/usr/share/omarchy/themes/$n"; do',
             '  [ -d "$t" ] || continue',
-            '  for f in colors.toml alacritty.toml kitty.conf waybar.css btop.theme mako.ini hyprland.conf; do',
+            '  for f in colors.toml alacritty.toml kitty.conf waybar.css btop.theme mako.ini hyprland.lua hyprland.conf; do',
             '    if [ -r "$t/$f" ]; then echo "@@FILE $f"; cat "$t/$f"; echo; found=1; fi',
             '  done',
             '  [ "$found" = 1 ] && break',
@@ -515,6 +523,8 @@ Item {
                     }
                 } else {
                     t = Model.parseOmarchyTheme(text)
+                    var b = Theme.borderFromDump(text)
+                    if (JSON.stringify(b) !== JSON.stringify(root.border)) root.border = b
                 }
                 if (JSON.stringify(t) !== JSON.stringify(root.systemTheme)) root.systemTheme = t
             }
@@ -528,12 +538,6 @@ Item {
     }
     onShellBgChanged: refreshSystemTheme()      // the shell recolors itself when the omarchy theme changes
     Timer { id: settleTimer; interval: 500; onTriggered: root.refreshSystemTheme() }
-    Timer {
-        interval: 5000
-        repeat: true
-        running: root.store.theme === "auto"
-        onTriggered: root.refreshSystemTheme()
-    }
     Component.onCompleted: refreshSystemTheme()
     onActiveThemeChanged: if (activeTheme === "auto") refreshSystemTheme()
 
