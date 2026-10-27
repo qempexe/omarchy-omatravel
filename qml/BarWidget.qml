@@ -3,6 +3,7 @@ import Quickshell
 import qs.Commons
 import qs.Ui
 import "core"
+import "js/Schema.js" as Schema
 
 BarWidget {
     id: root
@@ -16,31 +17,16 @@ BarWidget {
         return o !== undefined ? o : fallback
     }
 
-    // the shell's setting() values, used when the panel hasn't set a key
-    readonly property var shellDefaults: ({
-        icon: setting("icon", "\ud83c\udf0d"),
-        showCounts: setting("showCounts", true),
-        clickAction: setting("clickAction", "panel"),
-        middleAction: setting("middleAction", "none"),
-        maxTooltipCountries: setting("maxTooltipCountries", 8),
-        maxTooltipCities: setting("maxTooltipCities", 10),
-        showFlags: setting("showFlags", true),
-        showPath: setting("showPath", true),
-        showPlaces: setting("showPlaces", true),
-        theme: setting("theme", "auto"),
-        customBg: setting("customBg", "#1a1b26"),
-        customFg: setting("customFg", "#c0caf5"),
-        accentColor: setting("accentColor", "#7aa2f7"),
-        opacity: setting("opacity", 100),
-        cornerRadius: setting("cornerRadius", 12),
-        outline: setting("outline", false),
-        surfaceTint: setting("surfaceTint", 0),
-        fontScale: setting("fontScale", 100),
-        density: setting("density", "comfortable"),
-        openAs: setting("openAs", "panel"),
-        windowWidth: setting("windowWidth", 1180),
-        windowHeight: setting("windowHeight", 760)
-    })
+    // the shell's setting() values, used when the panel hasn't set a key: every setting
+    // in js/Schema.js, read from this widget's entry in shell.json
+    readonly property var shellDefaults: {
+        var out = ({})
+        for (var i = 0; i < Schema.items.length; i++) {
+            var it = Schema.items[i]
+            out[it.key] = setting(it.key, it.fallback)
+        }
+        return out
+    }
 
     readonly property string cfgClick: String(v("clickAction", shellDefaults.clickAction))
     readonly property string cfgMiddle: String(v("middleAction", shellDefaults.middleAction))

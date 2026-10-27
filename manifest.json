@@ -33,6 +33,7 @@
       "middleAction": "none",
       "maxTooltipCountries": 8,
       "maxTooltipCities": 10,
+      "globeSide": "left",
       "showFlags": true,
       "showPath": true,
       "showPlaces": true,
@@ -42,8 +43,10 @@
       "accentColor": "#7aa2f7",
       "opacity": 100,
       "cornerRadius": 12,
-      "outline": false,
       "surfaceTint": 0,
+      "outline": false,
+      "outlineGradient": true,
+      "outlineColor": "accent",
       "fontScale": 100,
       "density": "comfortable",
       "openAs": "panel",
@@ -108,6 +111,17 @@
         "step": 1,
         "defaultValue": 10,
         "description": "How many cities the tooltip lists under each country."
+      },
+      {
+        "key": "globeSide",
+        "type": "enum",
+        "label": "Globe side",
+        "options": [
+          "left",
+          "right"
+        ],
+        "defaultValue": "left",
+        "description": "Which side of the atlas the globe sits on. Your lists take the other side."
       },
       {
         "key": "showFlags",
@@ -175,7 +189,7 @@
       {
         "key": "opacity",
         "type": "integer",
-        "label": "Opacity",
+        "label": "Window opacity",
         "min": 50,
         "max": 100,
         "step": 1,
@@ -193,13 +207,6 @@
         "description": "Corners of the docked atlas. 0 is square, 24 is very round."
       },
       {
-        "key": "outline",
-        "type": "boolean",
-        "label": "Window outline",
-        "defaultValue": false,
-        "description": "Draw the edge of the docked atlas in the accent color instead of a plain neutral line."
-      },
-      {
         "key": "surfaceTint",
         "type": "integer",
         "label": "Window tint",
@@ -208,6 +215,33 @@
         "step": 1,
         "defaultValue": 0,
         "description": "How much of the accent color washes over the background. 0 keeps it plain."
+      },
+      {
+        "key": "outline",
+        "type": "boolean",
+        "label": "Window outline",
+        "defaultValue": false,
+        "description": "Draw the edge of the docked atlas in color instead of a plain neutral line: the theme's window border gradient, one of its colors, or the accent."
+      },
+      {
+        "key": "outlineGradient",
+        "type": "boolean",
+        "label": "Outline gradient",
+        "defaultValue": true,
+        "description": "When your theme's window border is a gradient, the outline runs through all its colors, at the same angle."
+      },
+      {
+        "key": "outlineColor",
+        "type": "enum",
+        "label": "Outline color",
+        "options": [
+          "accent",
+          "first",
+          "middle",
+          "last"
+        ],
+        "defaultValue": "accent",
+        "description": "The one color of the outline when it isn't a gradient. The border colors come from your theme's window border, and fall back to the accent when it has none."
       },
       {
         "key": "fontScale",
