@@ -31,7 +31,7 @@ Panel {
         _onSettings = now
     }
     readonly property var atlasLook: tm ? tm.look : ({ opacity: 100, cornerRadius: 12, outline: false, surfaceTint: 0,
-        fontScale: 100, density: "comfortable", openAs: "panel", windowWidth: 1180, windowHeight: 760 })
+        outlineGradient: true, outlineColor: "accent", globeSide: "left", fontScale: 100, density: "comfortable", openAs: "panel", windowWidth: 1180, windowHeight: 760 })
     // the one inset used on every edge (settings > look > spacing)
     readonly property int gutter: atlasLook.density === "compact" ? 10 : (atlasLook.density === "spacious" ? 18 : 14)
     property string query: ""
@@ -69,6 +69,16 @@ Panel {
     }
     // what's actually painted behind the content (settings > look > opacity)
     readonly property color paintBg: Qt.rgba(panelBg.r, panelBg.g, panelBg.b, atlasLook.opacity / 100)
+    // the outline: the theme's window border as a gradient, one color from it, or the accent
+    readonly property var borderColors: tm ? tm.border.colors : []
+    readonly property bool outlineGradientOn: atlasLook.outline && atlasLook.outlineGradient && borderColors.length > 1
+    readonly property color outlineColor: {
+        var n = borderColors.length, pick = atlasLook.outlineColor
+        if (n === 0 || pick === "accent") return root.accent
+        if (pick === "first") return borderColors[0]
+        if (pick === "last") return borderColors[n - 1]
+        return borderColors[Math.floor((n - 1) / 2)]
+    }
     // tell the model the shell's color so it can tell which omarchy theme is on
     Binding { target: root.tm; property: "shellBg"; value: root.barBackground; when: !!root.tm }
 
@@ -300,7 +310,10 @@ Panel {
         vertical: root.vertical
         open: root.opened
         focusTarget: keyCatcher
-        borderColor: root.atlasLook.outline ? root.accent : Qt.rgba(root.fg.r, root.fg.g, root.fg.b, 0.14)
+        borderColor: root.atlasLook.outline ? root.outlineColor : Qt.rgba(root.fg.r, root.fg.g, root.fg.b, 0.14)
+        borderStops: root.outlineGradientOn ? root.borderColors : []
+        borderAngle: root.tm ? root.tm.border.angle : 0
+        fillColor: root.paintBg
         frameRadius: root.atlasLook.cornerRadius
         wantedWidth: Style.space(root.atlasLook.windowWidth)
         wantedHeight: Style.space(root.atlasLook.windowHeight)
@@ -319,10 +332,10 @@ Panel {
             width: parent ? parent.width : 0
             height: parent ? parent.height : 0
 
-            Rectangle {                      // same solid background in the popup and the window
+            Rectangle {                      // the window's background (the popup draws its own, with the outline)
                 anchors.fill: parent
                 z: -1
-                radius: root.inWindow ? 0 : root.atlasLook.cornerRadius
+                visible: root.inWindow
                 color: root.paintBg
             }
 

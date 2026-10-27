@@ -13,7 +13,10 @@ PopupWindow {
     property bool vertical: false             // bar on the left / right edge
     property real wantedWidth: 1180
     property real wantedHeight: 760
-    property color borderColor: "#33ffffff"
+    property color borderColor: "#33ffffff"   // the outline in one color
+    property var borderStops: []               // or a gradient through these, at borderAngle
+    property real borderAngle: 0
+    property color fillColor: "transparent"    // the background, drawn with the outline as one shape
     property real frameRadius: 12
     property var focusTarget: null            // gets the keyboard when shown
     signal closeRequested()
@@ -131,6 +134,22 @@ PopupWindow {
         root.maxHeight = Math.max(300, room)
     }
 
+    function css(c) {
+        return "rgba(" + Math.round(c.r * 255) + "," + Math.round(c.g * 255) + "," + Math.round(c.b * 255) + "," + c.a + ")"
+    }
+
+    // a rounded rectangle path, the same one for the fill and the outline
+    function roundRect(ctx, x, y, w, h, radius) {
+        const r = Math.max(0, Math.min(radius, w / 2, h / 2))
+        ctx.beginPath()
+        ctx.moveTo(x + r, y)
+        ctx.arcTo(x + w, y, x + w, y + h, r)
+        ctx.arcTo(x + w, y + h, x, y + h, r)
+        ctx.arcTo(x, y + h, x, y, r)
+        ctx.arcTo(x, y, x + w, y, r)
+        ctx.closePath()
+    }
+
     function justClosed() { return Date.now() - root.grabClosedAt < 500 }
 
     // click outside to close
@@ -216,19 +235,68 @@ PopupWindow {
         anchors.leftMargin: root.padLeft
         anchors.rightMargin: root.padRight
 
+        // the background and the outline come from the same rounded rectangle, so the
+        // line always sits exactly on the edge of the fill, whatever the size, corners or
+        // scale. the outline is half a pixel in, so its one pixel lands on whole pixels
+        Canvas {
+            id: fill
+            anchors.fill: parent
+            readonly property color c: root.fillColor
+            readonly property real r: root.frameRadius
+            onCChanged: requestPaint()
+            onRChanged: requestPaint()
+            onWidthChanged: requestPaint()
+            onHeightChanged: requestPaint()
+            onPaint: {
+                const ctx = getContext("2d")
+                ctx.reset()
+                if (width < 2 || height < 2) return
+                root.roundRect(ctx, 0, 0, width, height, r)
+                ctx.fillStyle = root.css(c)
+                ctx.fill()
+            }
+        }
+
         Item {
             id: holder
             anchors.fill: parent
             clip: true
         }
 
-        Rectangle {                           // thin border, drawn over the content
+        Canvas {
+            id: line
             anchors.fill: parent
             z: 10
-            color: "transparent"
-            radius: root.frameRadius
-            border.width: 1
-            border.color: root.borderColor
+            readonly property color c: root.borderColor
+            readonly property var stops: root.borderStops
+            readonly property real angle: root.borderAngle
+            readonly property real r: root.frameRadius
+            onCChanged: requestPaint()
+            onStopsChanged: requestPaint()
+            onAngleChanged: requestPaint()
+            onRChanged: requestPaint()
+            onWidthChanged: requestPaint()
+            onHeightChanged: requestPaint()
+            onPaint: {
+                const ctx = getContext("2d")
+                ctx.reset()
+                if (width < 4 || height < 4) return
+                const n = stops ? stops.length : 0
+                if (n > 1) {
+                    // the window border's gradient, across the panel at its angle
+                    const a = angle * Math.PI / 180, dx = Math.cos(a), dy = Math.sin(a)
+                    const half = (Math.abs(dx) * width + Math.abs(dy) * height) / 2
+                    const g = ctx.createLinearGradient(width / 2 - dx * half, height / 2 - dy * half,
+                                                       width / 2 + dx * half, height / 2 + dy * half)
+                    for (let i = 0; i < n; i++) g.addColorStop(i / (n - 1), stops[i])
+                    ctx.strokeStyle = g
+                } else {
+                    ctx.strokeStyle = root.css(c)
+                }
+                ctx.lineWidth = 1
+                root.roundRect(ctx, 0.5, 0.5, width - 1, height - 1, Math.max(0, r - 0.5))
+                ctx.stroke()
+            }
         }
     }
 }
