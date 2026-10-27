@@ -617,11 +617,13 @@ Panel {
                 z: 2
 
                 readonly property real sidebarWidth: Math.min(Style.space(440), width * 0.42)
+                // the globe on the left (the lists on the right), or the other way round
+                readonly property bool globeRight: root.atlasLook.globeSide === "right"
 
                 // map
                 Item {
                     id: mapPane
-                    anchors.left: parent.left
+                    x: body.globeRight ? body.sidebarWidth + 1 : 0
                     anchors.top: parent.top
                     anchors.bottom: parent.bottom
                     width: body.width - body.sidebarWidth - 1
@@ -700,7 +702,7 @@ Panel {
                 }
 
                 Rectangle {
-                    x: mapPane.width
+                    x: body.globeRight ? body.sidebarWidth : mapPane.width
                     width: 1
                     anchors.top: parent.top
                     anchors.bottom: parent.bottom
@@ -711,7 +713,7 @@ Panel {
                 Item {
                     id: sidebar
                     width: body.sidebarWidth
-                    anchors.right: parent.right
+                    x: body.globeRight ? 0 : body.width - body.sidebarWidth
                     anchors.top: parent.top
                     anchors.bottom: parent.bottom
 
