@@ -36,7 +36,7 @@ bar = rd("qml/BarWidget.qml")
 assert "setting(it.key, it.fallback)" in bar and "Schema.items" in bar, "BarWidget.qml does not read every setting from the shell"
 
 for f in ("qml/core/TravelModel.qml", "qml/panel/Panel.qml", "qml/globe/GlobeView.qml", "qml/core/SettingsStore.qml",
-          "qml/panel/SettingRow.qml", "qml/panel/SettingsView.qml", "qml/panel/PanelFrame.qml", 
+          "qml/panel/SettingRow.qml", "qml/panel/SettingsView.qml", "qml/panel/PanelFrame.qml", "qml/panel/AboutPage.qml",
           "qml/js/Schema.js", "assets/logo.png", "assets/logo-dark.png",
           "qml/js/Model.js", "qml/js/GlobeProjection.js", "manifest.json", "README.md"):
     assert os.path.isfile(os.path.join(root, f)), "missing " + f
