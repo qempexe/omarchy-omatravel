@@ -68,3 +68,57 @@ function greatCircle(lat1, lng1, lat2, lng2, maxStepDeg) {
     }
     return out;
 }
+
+// the places of a band in one degree cells: the rows of cell c are
+// rows[start[c] .. start[c + 1]), in the band's order (busiest first)
+function buildCells(band) {
+    const cols = 360, rowsN = 180, lat = band.lat, lng = band.lng, n = lat.length
+    const cellOf = new Int32Array(n), start = new Int32Array(cols * rowsN + 1)
+    for (let i = 0; i < n; i++) {
+        const iy = Math.max(0, Math.min(rowsN - 1, Math.floor(lat[i] + 90)))
+        const ix = Math.max(0, Math.min(cols - 1, Math.floor(lng[i] + 180)))
+        cellOf[i] = iy * cols + ix
+        start[cellOf[i] + 1]++
+    }
+    for (let c = 0; c < cols * rowsN; c++) start[c + 1] += start[c]
+    const fill = start.slice(0, cols * rowsN), rows = new Int32Array(n)
+    for (let i = 0; i < n; i++) rows[fill[cellOf[i]]++] = i
+    return { cols: cols, rowsN: rowsN, start: start, rows: rows }
+}
+
+// the rows of every cell the view can reach, sorted so the busiest places come first.
+// only the cells around the middle of the view are looked at, not the whole world
+function visibleRows(ci, yaw, pitch, cx, cy, R) {
+    const D = Math.PI / 180
+    const hd = Math.sqrt(cx * cx + cy * cy)
+    const reach = Math.min(Math.PI / 2, (hd >= R ? Math.PI / 2 : Math.asin(hd / R)) + 0.03)
+    const clat = Math.max(-89.9, Math.min(89.9, pitch / D))
+    const clng = (((-yaw / D) + 180) % 360 + 360) % 360 - 180
+    const cv = latLngToVec(clat, clng)
+    const cosLim = Math.cos(Math.min(Math.PI, reach + 0.0124))   // plus half a cell's diagonal
+    const deg = reach / D
+    const lat0 = Math.max(-90, Math.floor(clat - deg - 1)), lat1 = Math.min(89, Math.floor(clat + deg + 1))
+    // near a pole, or zoomed out, every longitude can be in view
+    const span = Math.abs(clat) + deg + 1 >= 89 ? 180
+               : Math.min(180, Math.asin(Math.min(1, Math.sin(reach) / Math.cos(clat * D))) / D + 2)
+    // a cell only gets as many places as could ever be labelled in it at this size
+    // on screen: its busiest ones
+    const cellPx = R * D
+    const perCell = Math.max(2, Math.ceil(cellPx * cellPx / 400) + 1)
+    const out = []
+    for (let iy = lat0 + 90; iy <= lat1 + 90; iy++) {
+        const la = (iy - 90 + 0.5) * D, cl = Math.cos(la), sl = Math.sin(la)
+        const first = Math.floor(clng - span), last = Math.floor(clng + span)
+        for (let lo = first; lo <= Math.min(last, first + 359); lo++) {
+            const ix = ((lo + 180) % 360 + 360) % 360
+            const c = iy * ci.cols + ix
+            const a = ci.start[c], b = ci.start[c + 1]
+            if (a === b) continue
+            const lc = (ix - 180 + 0.5) * D
+            if (cl * Math.sin(lc) * cv.x + sl * cv.y + cl * Math.cos(lc) * cv.z < cosLim) continue
+            for (let k = a; k < Math.min(b, a + perCell); k++) out.push(ci.rows[k])
+        }
+    }
+    out.sort((m, n) => m - n)
+    return out
+}
