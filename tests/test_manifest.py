@@ -51,6 +51,20 @@ assert "PanelFrame {" in rd("qml/panel/Panel.qml") and "KeyboardPanel" not in rd
 for f in qmls:
     t = rd(f)
     assert not re.search(r"\b(TextInput|TextField|TextArea|TextEdit)\b\s*\{", t), f + " creates a native text element"
+# city, country and profile names are yours, theme names come from theme files: every
+# Text item pins plain text, so nothing in them is ever read as markup
+for f in qmls:
+    lines = rd(f).split("\n")
+    for i, line in enumerate(lines):
+        if not re.match(r"^\s*(?:[\w.]+:\s*)?Text \{\s*$", line):
+            continue
+        depth, block = 0, []
+        for l in lines[i:]:
+            depth += l.count("{") - l.count("}")
+            block.append(l)
+            if depth <= 0:
+                break
+        assert any("textFormat: Text.PlainText" in b for b in block), "%s:%d Text without textFormat: Text.PlainText" % (f, i + 1)
 for f in qmls:
     t = rd(f)
     assert "import QtQuick.Controls" not in t, f + " imports QtQuick.Controls"
