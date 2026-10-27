@@ -9,12 +9,6 @@
 
 <p align="center">Your trips on a spinning globe, one click away in the <a href="https://omarchy.org">Omarchy</a> bar.</p>
 
-<p align="center">
-  <a href="https://github.com/qempexe/omarchy-omatravel/releases"><img src="https://img.shields.io/github/v/release/qempexe/omarchy-omatravel?label=version&color=c8925a" alt="Version"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/github/license/qempexe/omarchy-omatravel?color=c8925a" alt="License: MIT"></a>
-  <a href="https://omarchy.org"><img src="https://img.shields.io/badge/Omarchy-plugin-c8925a" alt="Omarchy plugin"></a>
-</p>
-
 ![Omatravel](preview.png)
 
 I like looking back at where I've been, but every travel app wanted an account,
