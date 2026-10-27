@@ -22,6 +22,14 @@ Panel {
     property bool vertical: false             // bar on the left / right edge
 
     property string currentTab: "places"
+    // one search box serves both the places and the settings: going from one to the
+    // other starts it empty
+    property bool _onSettings: false
+    onCurrentTabChanged: {
+        var now = currentTab === "look"
+        if (now !== _onSettings && query !== "") searchField.clear()
+        _onSettings = now
+    }
     readonly property var atlasLook: tm ? tm.look : ({ opacity: 100, cornerRadius: 12, outline: false, surfaceTint: 0,
         fontScale: 100, density: "comfortable", openAs: "panel", windowWidth: 1180, windowHeight: 760 })
     // the one inset used on every edge (settings > look > spacing)
@@ -442,14 +450,15 @@ Panel {
                     anchors.verticalCenter: parent.verticalCenter
                     width: Math.min(Style.space(320), card.width * 0.32)
                     height: Style.space(34)
-                    placeholderText: "Search your countries or cities"
+                    // on the Settings tab it searches the settings, anywhere else your places
+                    placeholderText: root.currentTab === "look" ? "Search the settings" : "Search your countries or cities"
                     foreground: root.fg
                     accent: root.accent
                     fontFamily: root.fontFamily
                     pixelSize: root.fsMain
                     onTextChanged: {
                         root.query = text
-                        if (text && root.currentTab !== "places") root.currentTab = "places"
+                        if (text && root.currentTab !== "places" && root.currentTab !== "look") root.currentTab = "places"
                     }
                 }
 
@@ -1357,6 +1366,9 @@ Panel {
                         SettingsView {
                             anchors.fill: parent
                             visible: root.currentTab === "look"
+                            filter: root.currentTab === "look" ? root.query : ""
+                            fsMain: root.fsMain
+                            fsSub: root.fsSub
                             store: root.tm ? root.tm.settings : null
                             readSetting: function(key, fallback) {
                                 return root.hostWidget ? root.hostWidget.setting(key, fallback) : fallback

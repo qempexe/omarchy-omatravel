@@ -1,11 +1,16 @@
 import QtQuick
 import QtQuick.Layouts
 import Quickshell.Io
+import "../js/Schema.js" as Schema
 
-// the settings tab of the atlas. four sections: bar, globe, look, window.
-// a setting with `when` only shows while that holds. every one is a SettingRow with
-// a hint and a reset arrow once changed. saved at once by SettingsStore and applied
-// everywhere through TravelModel
+// the settings tab of the atlas:
+//   * one underlined tab per group in js/Schema.js, and About last;
+//   * that group's settings, in their sections, or every match while the header's
+//     search box has text in it;
+//   * "Changed only" narrows it to what differs from the defaults, "Reset all" puts
+//     everything back.
+// a row whose `when` doesn't hold is dimmed, not hidden, so nothing jumps around.
+// every change is saved at once by SettingsStore and applied everywhere through TravelModel
 Item {
     id: root
 
@@ -18,130 +23,37 @@ Item {
     property string fontFamily: ""
     property string footnote: ""              // extra line under the sections (theme status)
     property bool popped: false               // the atlas is in its own window right now
+    property string filter: ""                // what is typed in the header's search box
+    property int fsMain: 11
+    property int fsSub: 9
 
+    property int group: 0
+    property bool changedOnly: false
     property bool confirmReset: false
+
+    readonly property bool searching: filter.trim() !== ""
+    readonly property bool onAbout: group === Schema.groups.length && !searching && !changedOnly
 
     readonly property color inkOnFg: (0.299 * accent.r + 0.587 * accent.g + 0.114 * accent.b) > 0.55
         ? Qt.rgba(0.07, 0.07, 0.09, 1) : Qt.rgba(0.97, 0.97, 0.98, 1)
     readonly property color panelSolid: Qt.rgba(panelBg.r, panelBg.g, panelBg.b, 1)
+    readonly property bool lightPanel: (0.299 * panelBg.r + 0.587 * panelBg.g + 0.114 * panelBg.b) > 0.55
     function tint(a) { return Qt.rgba(ink.r, ink.g, ink.b, a) }
-
-    // keep this list, manifest.json and BarWidget.qml in sync (tests/test_manifest.py checks)
-    readonly property var sections: [
-        {
-            title: "Bar",
-            items: [
-                { key: "icon", label: "Bar icon", kind: "string", fallback: "\ud83c\udf0d", maxLength: 8,
-                  hint: "Up to 8 characters shown in the bar, for example an emoji." },
-                { key: "showCounts", label: "Show counts", kind: "bool", fallback: true,
-                  hint: "Countries and cities next to the icon." },
-                { key: "clickAction", label: "Left click", kind: "enum", fallback: "panel",
-                  options: ["panel", "settings", "none"],
-                  labels: { panel: "Open the atlas", settings: "Open settings", none: "Nothing" },
-                  hint: "What a left click on the widget does. Right click always opens the settings." },
-                { key: "middleAction", label: "Middle click", kind: "enum", fallback: "none",
-                  options: ["none", "panel", "settings"],
-                  labels: { none: "Nothing", panel: "Open the atlas", settings: "Open settings" },
-                  hint: "What a middle click on the widget does." },
-                { key: "maxTooltipCountries", label: "Countries in the tooltip", kind: "int", fallback: 8,
-                  min: 1, max: 30, step: 1,
-                  hint: "How many countries the bar tooltip lists before \"+ N more\"." },
-                { key: "maxTooltipCities", label: "Cities per country", kind: "int", fallback: 10,
-                  min: 1, max: 30, step: 1,
-                  hint: "How many cities the tooltip lists under each country." }
-            ]
-        },
-        {
-            title: "Globe",
-            items: [
-                { key: "showFlags", label: "Show flags", kind: "bool", fallback: true,
-                  hint: "Country flag emoji in the lists and the tooltip." },
-                { key: "showPath", label: "Travel path on the globe", kind: "bool", fallback: true,
-                  hint: "Draw arcs between your dated visits, in order." },
-                { key: "showPlaces", label: "City labels on the globe", kind: "bool", fallback: true,
-                  hint: "Label cities as you zoom in." }
-            ]
-        },
-        {
-            title: "Look",
-            items: [
-                { key: "theme", label: "Atlas theme", kind: "enum", fallback: "auto",
-                  options: ["auto", "custom", "catppuccin", "dracula", "everforest", "gruvbox", "kanagawa", "mono", "nord", "omarchy", "rose-pine", "tokyo-night"],
-                  labels: { auto: "Follow Omarchy", custom: "Custom" },
-                  hint: "Colors of the atlas and the globe. Follow Omarchy updates the moment you switch your theme. Custom uses the three colors below." },
-                { key: "customBg", label: "Background", kind: "color", fallback: "#1a1b26", maxLength: 7,
-                  presets: ["#1a1b26", "#1e1e2e", "#1d2021", "#2e3440", "#191724", "#121216", "#0f0f0f", "#f2f2f4"],
-                  hint: "Pick one, or type a hex like #1a1b26.",
-                  when: [{ key: "theme", is: ["custom"] }] },
-                { key: "customFg", label: "Text", kind: "color", fallback: "#c0caf5", maxLength: 7,
-                  presets: ["#c0caf5", "#cdd6f4", "#ebdbb2", "#d8dee9", "#e0def4", "#f2f2f4", "#e8dcc8", "#1a1b26"],
-                  hint: "Pick one, or type a hex like #c0caf5.",
-                  when: [{ key: "theme", is: ["custom"] }] },
-                { key: "accentColor", label: "Accent", kind: "color", fallback: "#7aa2f7", maxLength: 7,
-                  presets: ["#ff6a1f", "#7aa2f7", "#bb9af7", "#7dcfff", "#9ece6a", "#e0af68", "#f7768e", "#c0caf5"],
-                  hint: "Selected parts, pins and the travel path.",
-                  when: [{ key: "theme", is: ["custom"] }] },
-                { key: "opacity", label: "Opacity", kind: "int", fallback: 100, min: 50, max: 100, step: 1,
-                  hint: "Background opacity of the atlas. Text, globe and buttons stay solid." },
-                { key: "cornerRadius", label: "Roundness", kind: "int", fallback: 12, min: 0, max: 24, step: 2,
-                  hint: "Corners of the docked atlas. 0 is square, 24 is very round." },
-                { key: "outline", label: "Window outline", kind: "bool", fallback: false,
-                  hint: "Draw the edge of the docked atlas in the accent color instead of a plain neutral line." },
-                { key: "surfaceTint", label: "Window tint", kind: "int", fallback: 0, min: 0, max: 30, step: 1,
-                  hint: "How much of the accent color washes over the background. 0 keeps it plain." },
-                { key: "fontScale", label: "Text size", kind: "int", fallback: 100, min: 80, max: 150, step: 5,
-                  divisor: 100, decimals: 2,
-                  hint: "1 is normal, 1.25 is a quarter bigger." },
-                { key: "density", label: "Spacing", kind: "enum", fallback: "comfortable",
-                  options: ["compact", "comfortable", "spacious"],
-                  labels: { compact: "Compact", comfortable: "Comfortable", spacious: "Spacious" },
-                  hint: "How much air there is around the edges of the atlas." }
-            ]
-        },
-        {
-            title: "Window",
-            items: [
-                { key: "openAs", label: "Open as", kind: "enum", fallback: "panel",
-                  options: ["panel", "window"],
-                  labels: { panel: "Bar panel", window: "Own window" },
-                  hint: "Where the bar icon opens the atlas. You can always pop it out or dock it back from the header." },
-                { key: "windowWidth", label: "Width", kind: "int", fallback: 1180, min: 800, max: 1800, step: 20,
-                  hint: "How wide the docked atlas opens." },
-                { key: "windowHeight", label: "Height", kind: "int", fallback: 760, min: 500, max: 1200, step: 20,
-                  hint: "How tall the docked atlas opens. It never grows past the screen." }
-            ]
-        }
-    ]
-
-    readonly property var defaults: {
-        var d = ({})
-        for (var s = 0; s < sections.length; s++)
-            for (var i = 0; i < sections[s].items.length; i++)
-                d[sections[s].items[i].key] = sections[s].items[i].fallback
-        return d
-    }
+    function accentTint(a) { return Qt.rgba(accent.r, accent.g, accent.b, a) }
 
     // value: panel edit, then the shell's setting, then the default
     function val(key) {
-        var fb = root.defaults[key]
+        var fb = Schema.defaults[key]
         var raw = root.store ? root.store.values[key] : undefined
-        if (raw !== undefined) return raw
+        if (raw !== undefined) return Schema.clean(key, raw)
         if (root.readSetting) {
             var s = root.readSetting(key, fb)
-            if (s !== undefined && s !== null) return s
+            if (s !== undefined && s !== null) return Schema.clean(key, s)
         }
         return fb
     }
-
-    // a setting with `when` only shows while every condition holds
-    function shown(item) {
-        if (!item.when) return true
-        for (var i = 0; i < item.when.length; i++) {
-            var c = item.when[i]
-            if (c.is.map(String).indexOf(String(root.val(c.key))) < 0) return false
-        }
-        return true
-    }
+    function same(item) { return String(val(item.key)) === String(item.fallback) }
+    function dimmed(item) { return !Schema.active(item, root.val) }
 
     // the window manager sizes the pop-out window, so width and height do nothing there.
     // shown but locked until it's docked again
@@ -152,7 +64,41 @@ Item {
     function setValue(item, v) {
         if (root.offHere(item)) return
         if (item.kind === "color" && !/^#[0-9a-fA-F]{6}$/.test(String(v).trim())) return
-        if (root.store) root.store.set(item.key, v)
+        if (root.store) root.store.set(item.key, Schema.clean(item.key, v))
+    }
+
+    // the rows to show: the chosen group, or every match while searching or showing only
+    // what changed. `head` is the heading over a row: the group's title in a list across
+    // groups, otherwise the row's section where a new one starts
+    readonly property var rows: {
+        var across = root.searching || root.changedOnly
+        // only "Changed only" reads the values here: anything else would rebuild the rows,
+        // and the row being dragged with them, on every change
+        var out = []
+        for (var g = 0; g < Schema.groups.length; g++) {
+            if (!across && g !== root.group) continue
+            var items = Schema.groups[g].items
+            var first = true, lastSection = ""
+            for (var i = 0; i < items.length; i++) {
+                var it = items[i]
+                if (!Schema.matches(it, root.filter)) continue
+                if (root.changedOnly && root.same(it)) continue
+                var section = it.section || ""
+                var head = across ? (first ? Schema.groups[g].title : "") : (section !== lastSection ? section : "")
+                out.push({ item: it, head: head, first: first })
+                lastSection = section
+                first = false
+            }
+        }
+        return out
+    }
+
+    // how many settings differ from their defaults
+    readonly property int changed: {
+        var tick = root.store ? root.store.values : null
+        var n = 0
+        for (var i = 0; i < Schema.items.length; i++) if (!root.same(Schema.items[i])) n++
+        return n
     }
 
     function resetAll() {
@@ -163,7 +109,7 @@ Item {
             return
         }
         root.confirmReset = false
-        root.store.resetAll(root.defaults)
+        root.store.resetAll(Schema.defaults)
     }
 
     Timer { id: confirmTimer; interval: 2500; onTriggered: root.confirmReset = false }
@@ -200,177 +146,255 @@ Item {
         }
     }
 
-    Flickable {
-        id: flick
+    // a small rounded button: "Changed only", "Reset all"
+    component Pill: Rectangle {
+        id: pill
+        property string text: ""
+        property bool on: false
+        signal clicked()
+        implicitWidth: pillText.implicitWidth + 16
+        implicitHeight: pillText.implicitHeight + 10
+        radius: height / 2
+        color: on ? root.accentTint(0.25) : (pillArea.containsMouse ? root.tint(0.12) : root.tint(0.07))
+        border.width: 1
+        border.color: on ? root.accentTint(0.7) : root.tint(0.10)
+        Text {
+            id: pillText
+            textFormat: Text.PlainText
+            anchors.centerIn: parent
+            text: pill.text
+            color: root.ink
+            font.family: root.fontFamily
+            font.pixelSize: root.fsSub
+        }
+        MouseArea {
+            id: pillArea
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onClicked: pill.clicked()
+        }
+    }
+
+    ColumnLayout {
         anchors.fill: parent
-        contentWidth: width
-        contentHeight: col.implicitHeight + 28
-        clip: true
-        boundsBehavior: Flickable.StopAtBounds
+        anchors.topMargin: 10
+        spacing: 10
 
-        ColumnLayout {
-            id: col
-            x: 14
-            y: 12
-            width: flick.width - 28
-            spacing: 14
+        // ---- tabs -------------------------------------------------------------------
+        Item {
+            Layout.fillWidth: true
+            Layout.leftMargin: 14
+            Layout.rightMargin: 14
+            implicitHeight: 30
 
-            RowLayout {
-                Layout.fillWidth: true
-                spacing: 8
-
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    spacing: 2
-                    Text {
-                        textFormat: Text.PlainText
-                        text: "Settings"
-                        color: root.ink
-                        font.family: root.fontFamily
-                        font.pixelSize: 11
-                        font.weight: Font.DemiBold
-                    }
-                    Text {
-                        textFormat: Text.PlainText
-                        text: "Changes apply instantly"
-                        color: root.ink
-                        opacity: 0.6
-                        font.family: root.fontFamily
-                        font.pixelSize: 9
-                    }
-                }
-
-                Rectangle {
-                    implicitWidth: resetLabel.implicitWidth + 16
-                    implicitHeight: resetLabel.implicitHeight + 10
-                    radius: 6
-                    color: root.confirmReset ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.25) : root.tint(0.08)
-                    Text {
-                        id: resetLabel
-                        textFormat: Text.PlainText
-                        anchors.centerIn: parent
-                        text: root.confirmReset ? "Click again to confirm" : "Reset all"
-                        color: root.ink
-                        font.family: root.fontFamily
-                        font.pixelSize: 9
-                    }
-                    MouseArea {
-                        anchors.fill: parent
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: root.resetAll()
-                    }
-                }
+            Rectangle {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.bottom: parent.bottom
+                height: 1
+                color: root.tint(0.10)
             }
 
-            Repeater {
-                model: root.sections
+            RowLayout {
+                anchors.fill: parent
+                spacing: 0
 
-                delegate: ColumnLayout {
-                    id: section
-                    required property var modelData
-                    Layout.fillWidth: true
-                    spacing: 6
-
-                    Text {
-                        textFormat: Text.PlainText
-                        text: section.modelData.title.toUpperCase()
-                        color: root.ink
-                        opacity: 0.55
-                        font.family: root.fontFamily
-                        font.pixelSize: 9
-                        font.letterSpacing: 1.2
-                    }
-
-                    Rectangle {
+                Repeater {
+                    model: Schema.groups.concat([{ key: "about", title: "About" }])
+                    delegate: Item {
+                        id: tabItem
+                        required property var modelData
+                        required property int index
+                        readonly property bool on: index === root.group && !root.searching && !root.changedOnly
                         Layout.fillWidth: true
-                        implicitHeight: rows.implicitHeight + 8
-                        radius: 10
-                        color: root.tint(0.035)
-                        border.width: 1
-                        border.color: root.tint(0.07)
+                        Layout.preferredWidth: 1
+                        Layout.fillHeight: true
 
-                        ColumnLayout {
-                            id: rows
+                        Text {
+                            textFormat: Text.PlainText
+                            anchors.centerIn: parent
+                            anchors.verticalCenterOffset: -1
+                            text: tabItem.modelData.title
+                            color: root.ink
+                            opacity: (root.searching || root.changedOnly) ? 0.3
+                                     : (tabItem.on ? 1.0 : (tabArea.containsMouse ? 0.8 : 0.5))
+                            font.family: root.fontFamily
+                            font.pixelSize: root.fsSub + 1
+                            font.weight: tabItem.on ? Font.DemiBold : Font.Normal
+                        }
+                        Rectangle {
+                            visible: tabItem.on
                             anchors.left: parent.left
                             anchors.right: parent.right
-                            anchors.top: parent.top
-                            anchors.leftMargin: 14
-                            anchors.rightMargin: 14
-                            anchors.topMargin: 4
-                            spacing: 0
-
-                            Repeater {
-                                model: section.modelData.items
-
-                                delegate: ColumnLayout {
-                                    Layout.fillWidth: true
-                                    spacing: 0
-                                    visible: root.shown(modelData)
-
-                                    Rectangle {
-                                        visible: index > 0
-                                        Layout.fillWidth: true
-                                        implicitHeight: 1
-                                        color: root.tint(0.07)
-                                    }
-
-                                    SettingRow {
-                                        id: settingRow
-                                        Layout.fillWidth: true
-                                        Layout.topMargin: 12
-                                        Layout.bottomMargin: 12
-
-                                        label: modelData.label
-                                        hint: root.offHere(modelData)
-                                            ? "Not used in a pop-out window: your window manager sizes it. Dock the atlas to use this."
-                                            : (modelData.hint || "")
-                                        kind: modelData.kind
-                                        options: modelData.options || []
-                                        labels: modelData.labels || ({})
-                                        presets: modelData.presets || []
-                                        maxLength: modelData.maxLength !== undefined ? modelData.maxLength : 256
-                                        min: modelData.min !== undefined ? modelData.min : 0
-                                        max: modelData.max !== undefined ? modelData.max : 100
-                                        step: modelData.step !== undefined ? modelData.step : 1
-                                        divisor: modelData.divisor !== undefined ? modelData.divisor : 1
-                                        decimals: modelData.decimals !== undefined ? modelData.decimals : 0
-                                        defaultValue: modelData.fallback
-                                        dimmed: false
-                                        locked: root.offHere(modelData)
-                                        value: root.val(modelData.key)
-
-                                        fg: root.ink
-                                        accent: root.accent
-                                        bg: root.inkOnFg
-                                        panel: root.panelSolid
-                                        barFg: root.barFg
-                                        fontFamily: root.fontFamily
-                                        schemeAccent: root.accent
-                                        schemeBg: root.panelSolid
-                                        schemeCustom: root.accent
-                                        schemeNeutral: root.panelSolid
-                                        schemeMono: root.ink
-
-                                        onEdited: function(v) { root.setValue(modelData, v) }
-                                        onClipboardPaste: function(target, maxBytes) { root.requestPaste(settingRow, target) }
-                                    }
-                                }
-                            }
+                            anchors.bottom: parent.bottom
+                            height: 2
+                            radius: 1
+                            color: root.accent
+                        }
+                        MouseArea {
+                            id: tabArea
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: { root.group = tabItem.index; root.changedOnly = false }
                         }
                     }
                 }
             }
+        }
+
+        // ---- the About tab ------------------------------------------------------------
+        AboutPage {
+            visible: root.onAbout
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            ink: root.ink
+            accent: root.accent
+            fontFamily: root.fontFamily
+            lightPanel: root.lightPanel
+        }
+
+        // ---- what is shown: tools, then the rows ----------------------------------------
+        RowLayout {
+            visible: !root.onAbout
+            Layout.fillWidth: true
+            Layout.leftMargin: 14
+            Layout.rightMargin: 14
+            spacing: 8
 
             Text {
                 Layout.fillWidth: true
-                visible: root.footnote !== ""
                 textFormat: Text.PlainText
-                text: root.footnote
+                text: root.searching
+                      ? (root.rows.length === 0 ? "No setting matches “" + root.filter.trim() + "”"
+                                                : root.rows.length + (root.rows.length === 1 ? " setting matches" : " settings match"))
+                      : (root.changed === 0 ? "Everything is at its default"
+                                            : root.changed + (root.changed === 1 ? " setting changed" : " settings changed"))
                 color: root.ink
                 opacity: 0.6
+                elide: Text.ElideRight
                 font.family: root.fontFamily
-                font.pixelSize: 9
-                wrapMode: Text.Wrap
+                font.pixelSize: root.fsSub
+            }
+            Pill {
+                text: "Changed only"
+                on: root.changedOnly
+                visible: root.changed > 0 || root.changedOnly
+                onClicked: root.changedOnly = !root.changedOnly
+            }
+            Pill {
+                text: root.confirmReset ? "Click again to confirm" : "Reset all"
+                on: root.confirmReset
+                visible: root.changed > 0
+                onClicked: root.resetAll()
+            }
+        }
+
+        Flickable {
+            id: flick
+            visible: !root.onAbout
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            contentWidth: width
+            contentHeight: col.implicitHeight + 20
+            clip: true
+            boundsBehavior: Flickable.StopAtBounds
+
+            ColumnLayout {
+                id: col
+                x: 14
+                width: flick.width - 28
+                spacing: 0
+
+                Repeater {
+                    model: root.rows
+
+                    delegate: ColumnLayout {
+                        id: rowItem
+                        required property var modelData
+                        required property int index
+                        readonly property var item: modelData.item
+                        Layout.fillWidth: true
+                        spacing: 0
+
+                        // a section or group heading over the row
+                        Text {
+                            visible: rowItem.modelData.head !== ""
+                            Layout.topMargin: rowItem.index === 0 ? 4 : 18
+                            Layout.bottomMargin: 2
+                            textFormat: Text.PlainText
+                            text: rowItem.modelData.head.toUpperCase()
+                            color: root.ink
+                            opacity: 0.55
+                            font.family: root.fontFamily
+                            font.pixelSize: root.fsSub
+                            font.letterSpacing: 1.2
+                        }
+
+                        Rectangle {
+                            visible: rowItem.modelData.head === "" && rowItem.index > 0
+                            Layout.fillWidth: true
+                            implicitHeight: 1
+                            color: root.tint(0.07)
+                        }
+
+                        SettingRow {
+                            id: settingRow
+                            Layout.fillWidth: true
+                            Layout.topMargin: 12
+                            Layout.bottomMargin: 12
+
+                            label: rowItem.item.label
+                            hint: root.offHere(rowItem.item)
+                                ? "Not used in a pop-out window: your window manager sizes it. Dock the atlas to use this."
+                                : (rowItem.item.hint || "")
+                            kind: rowItem.item.kind
+                            options: rowItem.item.options || []
+                            labels: rowItem.item.labels || ({})
+                            presets: rowItem.item.presets || []
+                            maxLength: rowItem.item.maxLength !== undefined ? rowItem.item.maxLength : 256
+                            min: rowItem.item.min !== undefined ? rowItem.item.min : 0
+                            max: rowItem.item.max !== undefined ? rowItem.item.max : 100
+                            step: rowItem.item.step !== undefined ? rowItem.item.step : 1
+                            divisor: rowItem.item.divisor !== undefined ? rowItem.item.divisor : 1
+                            decimals: rowItem.item.decimals !== undefined ? rowItem.item.decimals : 0
+                            defaultValue: rowItem.item.fallback
+                            dimmed: root.dimmed(rowItem.item)
+                            locked: root.offHere(rowItem.item)
+                            value: root.store ? (root.store.values, root.val(rowItem.item.key)) : rowItem.item.fallback
+
+                            fg: root.ink
+                            accent: root.accent
+                            bg: root.inkOnFg
+                            panel: root.panelSolid
+                            barFg: root.barFg
+                            fontFamily: root.fontFamily
+                            schemeAccent: root.accent
+                            schemeBg: root.panelSolid
+                            schemeCustom: root.accent
+                            schemeNeutral: root.panelSolid
+                            schemeMono: root.ink
+
+                            onEdited: function(v) { root.setValue(rowItem.item, v) }
+                            onClipboardPaste: function(target, maxBytes) { root.requestPaste(settingRow, target) }
+                        }
+                    }
+                }
+
+                Text {
+                    Layout.fillWidth: true
+                    Layout.topMargin: 14
+                    visible: root.footnote !== "" && !root.searching && !root.changedOnly
+                             && Schema.groups[root.group] !== undefined && Schema.groups[root.group].key === "look"
+                    textFormat: Text.PlainText
+                    text: root.footnote
+                    color: root.ink
+                    opacity: 0.6
+                    font.family: root.fontFamily
+                    font.pixelSize: root.fsSub
+                    wrapMode: Text.Wrap
+                }
             }
         }
     }
