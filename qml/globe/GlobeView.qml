@@ -174,27 +174,39 @@ Item {
             var P = Proj.makeProjector(root.yaw, root.pitch, cx, cy, R)
             var accentCss = root._css(root.accent, 1)
             var bgCss = root._css(root.bgColor, 0.9)
-            var textCss = root._css(root.textColor, 1)
             var hits = []
             var placed = []
 
+            // what is drawn already, in buckets of 32 px, so a new label is only checked
+            // against its neighbours
+            var BUCKET = 32
+            var buckets = {}
+            function take(box) {
+                placed.push(box)
+                for (var by = Math.floor(box[1] / BUCKET); by <= Math.floor(box[3] / BUCKET); by++)
+                    for (var bx = Math.floor(box[0] / BUCKET); bx <= Math.floor(box[2] / BUCKET); bx++) {
+                        var key = bx * 4096 + by
+                        if (buckets[key]) buckets[key].push(box)
+                        else buckets[key] = [box]
+                    }
+            }
             function free(x0, y0, x1, y1) {
-                for (var i = 0; i < placed.length; i++) {
-                    var q = placed[i]
-                    if (x0 < q[2] && x1 > q[0] && y0 < q[3] && y1 > q[1]) return false
-                }
+                for (var by = Math.floor(y0 / BUCKET); by <= Math.floor(y1 / BUCKET); by++)
+                    for (var bx = Math.floor(x0 / BUCKET); bx <= Math.floor(x1 / BUCKET); bx++) {
+                        var list = buckets[bx * 4096 + by]
+                        if (!list) continue
+                        for (var i = 0; i < list.length; i++) {
+                            var q = list[i]
+                            if (x0 < q[2] && x1 > q[0] && y0 < q[3] && y1 > q[1]) return false
+                        }
+                    }
                 return true
             }
+            // labels are drawn by the text items above the canvas, not here: x is where
+            // the text starts, y its baseline
+            var labels = []
             function label(txt, x, y, alpha, color, bold) {
-                ctx.font = (bold ? "bold " : "") + "11px sans-serif"
-                ctx.lineJoin = "round"
-                ctx.lineWidth = 3
-                ctx.strokeStyle = bgCss
-                ctx.strokeText(txt, x, y)
-                ctx.fillStyle = color
-                ctx.globalAlpha = alpha
-                ctx.fillText(txt, x, y)
-                ctx.globalAlpha = 1
+                labels.push({ t: txt, x: x, y: y, a: alpha, c: color, b: bold === true })
             }
 
             // 1. the path
@@ -277,7 +289,7 @@ Item {
                 if (pz <= 0.05) continue
                 if (P.x < -10 || P.x > w + 10 || P.y < -10 || P.y > h + 10) continue
                 pins.push({ x: P.x, y: P.y, z: pz, pt: pts[u] })
-                placed.push([P.x - 6, P.y - 6, P.x + 6, P.y + 6])
+                take([P.x - 6, P.y - 6, P.x + 6, P.y + 6])
             }
 
             // 3. places per zoom band
@@ -301,24 +313,12 @@ Item {
                     var ci = root._cellIndex[use]
                     if (!ci) { ci = root._buildCells(band); root._cellIndex[use] = ci }
 
-                    // which cells can be on screen
-                    var hd = Math.sqrt(cx * cx + cy * cy)
-                    var vang = hd >= R ? Math.PI / 2 : Math.asin(hd / R)
-                    var cosLim = Math.cos(Math.min(Math.PI / 2, vang + 0.08))
-                    var clat = root.pitch, clng = -root.yaw
-                    var cv = Proj.latLngToVec(clat * 180 / Math.PI, clng * 180 / Math.PI)
-                    var cand = []
-                    for (var c = 0; c < ci.cells.length; c++) {
-                        if (!ci.cells[c].length) continue
-                        if (ci.vx[c] * cv.x + ci.vy[c] * cv.y + ci.vz[c] * cv.z >= cosLim)
-                            cand.push.apply(cand, ci.cells[c])
-                    }
-                    cand.sort(function(m, n) { return m - n })      // rows are sorted by population
+                    // the places in the cells that can be on screen, busiest first
+                    var cand = root._visibleRows(ci, cx, cy, R)
 
-                    var maxLabels = Math.min(600, Math.round(16 + 30 * (root.zoom - 1)))
+                    var maxLabels = Math.min(root.maxLabels - 80, Math.round(16 + 30 * (root.zoom - 1)))
                     var lat = band.lat, lng = band.lng, name = band.name, pop = band.pop, cc = band.cc
                     var shown = 0
-                    ctx.font = "11px sans-serif"
                     for (var ri = 0; ri < cand.length && shown < maxLabels; ri++) {
                         var r = cand[ri]
                         var zz = P(lat[r], lng[r])
@@ -329,12 +329,12 @@ Item {
                         var x0 = sx + 5, y0 = sy - 7
                         if (x0 + tw > w - 2) continue
                         if (!free(x0, y0, x0 + tw + 2, y0 + 12) || !free(sx - 2, sy - 2, sx + 2, sy + 2)) continue
-                        placed.push([sx - 2, sy - 7, x0 + tw + 2, y0 + 12])
+                        take([sx - 2, sy - 7, x0 + tw + 2, y0 + 12])
                         var fade = Math.min(1, (zz - 0.12) / 0.25)
                         var rad = 1.5 + Math.log(Math.max(pop[r], 1000)) / Math.LN10 * 0.28
                         ctx.fillStyle = root._css(root.textColor, (0.75 * fade).toFixed(2))
                         ctx.beginPath(); ctx.arc(sx, sy, rad, 0, 2 * Math.PI); ctx.fill()
-                        label(name[r], x0, sy + 3.5, 0.72 * fade, textCss, false)
+                        label(name[r], x0, sy + 3.5, 0.72 * fade, root.textColor, false)
                         places.push({ x: sx, y: sy, name: name[r], cc: cc[r], pop: pop[r],
                                       lat: lat[r], lng: lng[r] })
                         shown++
@@ -364,8 +364,8 @@ Item {
                     var lx = pin.x + rr + 3                       // right of the pin, else left
                     if (!free(lx, pin.y - 8, lx + lw, pin.y + 5)) lx = pin.x - rr - 3 - lw
                     if (free(lx, pin.y - 8, lx + lw, pin.y + 5) && lx > 2 && lx + lw < w - 2) {
-                        placed.push([lx, pin.y - 8, lx + lw, pin.y + 5])
-                        label(ptxt, lx, pin.y + 4, Math.min(1, pin.z * 1.6), root._css(col, 1), true)
+                        take([lx, pin.y - 8, lx + lw, pin.y + 5])
+                        label(ptxt, lx, pin.y + 4, Math.min(1, pin.z * 1.6), col, true)
                     }
                 }
                 var n = order[pt.country + "|" + pt.name]
@@ -378,24 +378,93 @@ Item {
                 hits.push({ x: places[q].x, y: places[q].y, kind: "place", name: places[q].name,
                             cc: places[q].cc, pop: places[q].pop, lat: places[q].lat, lng: places[q].lng })
             root._hits = hits
+            root._labels = labels
         }
     }
 
+    // the place and pin names: text items, drawn on the gpu with a halo in the globe's
+    // background color. there are always MAX_LABELS of them, the unused ones hidden,
+    // so moving the globe only moves them
+    readonly property int maxLabels: 640
+    property var _labels: []
+    FontMetrics { id: labelMetrics; font.pixelSize: 11; font.family: "sans-serif" }
+    Item {
+        id: labelLayer
+        anchors.fill: parent
+        Repeater {
+            id: labelPool
+            model: root.maxLabels
+            delegate: Text {
+                required property int index
+                readonly property var spec: index < root._labels.length ? root._labels[index] : null
+                visible: spec !== null
+                x: spec ? spec.x : 0
+                y: spec ? spec.y - labelMetrics.ascent : 0
+                text: spec ? spec.t : ""
+                color: spec ? spec.c : "transparent"
+                opacity: spec ? spec.a : 0
+                font.pixelSize: 11
+                font.family: "sans-serif"
+                font.bold: spec ? spec.b : false
+                style: Text.Outline
+                styleColor: root._qc(root.bgColor, 0.9)
+                textFormat: Text.PlainText
+            }
+        }
+    }
+
+    // the places of a band in one degree cells: the rows of cell c are
+    // rows[start[c] .. start[c + 1]), in the band's order (busiest first)
     function _buildCells(band) {
-        var cells = [], vx = [], vy = [], vz = []
-        for (var c = 0; c < 72 * 36; c++) {
-            cells.push([])
-            var la = ((Math.floor(c / 72) + 0.5) * 5 - 90) * Math.PI / 180
-            var lo = (((c % 72) + 0.5) * 5 - 180) * Math.PI / 180
-            vx.push(Math.cos(la) * Math.sin(lo)); vy.push(Math.sin(la)); vz.push(Math.cos(la) * Math.cos(lo))
+        const cols = 360, rowsN = 180, lat = band.lat, lng = band.lng, n = lat.length
+        const cellOf = new Int32Array(n), start = new Int32Array(cols * rowsN + 1)
+        for (let i = 0; i < n; i++) {
+            const iy = Math.max(0, Math.min(rowsN - 1, Math.floor(lat[i] + 90)))
+            const ix = Math.max(0, Math.min(cols - 1, Math.floor(lng[i] + 180)))
+            cellOf[i] = iy * cols + ix
+            start[cellOf[i] + 1]++
         }
-        var lat = band.lat, lng = band.lng
-        for (var i = 0; i < lat.length; i++) {
-            var iy = Math.max(0, Math.min(35, Math.floor((lat[i] + 90) / 5)))
-            var ix = Math.max(0, Math.min(71, Math.floor((lng[i] + 180) / 5)))
-            cells[iy * 72 + ix].push(i)
+        for (let c = 0; c < cols * rowsN; c++) start[c + 1] += start[c]
+        const fill = start.slice(0, cols * rowsN), rows = new Int32Array(n)
+        for (let i = 0; i < n; i++) rows[fill[cellOf[i]]++] = i
+        return { cols: cols, rowsN: rowsN, start: start, rows: rows }
+    }
+
+    // the rows of every cell the view can reach, sorted so the busiest places come first.
+    // only the cells around the middle of the view are looked at, not the whole world
+    function _visibleRows(ci, cx, cy, R) {
+        const D = Math.PI / 180
+        const hd = Math.sqrt(cx * cx + cy * cy)
+        const reach = Math.min(Math.PI / 2, (hd >= R ? Math.PI / 2 : Math.asin(hd / R)) + 0.03)
+        const clat = Math.max(-89.9, Math.min(89.9, root.pitch / D))
+        const clng = (((-root.yaw / D) + 180) % 360 + 360) % 360 - 180
+        const cv = Proj.latLngToVec(clat, clng)
+        const cosLim = Math.cos(Math.min(Math.PI, reach + 0.0124))   // plus half a cell's diagonal
+        const deg = reach / D
+        const lat0 = Math.max(-90, Math.floor(clat - deg - 1)), lat1 = Math.min(89, Math.floor(clat + deg + 1))
+        // near a pole, or zoomed out, every longitude can be in view
+        const span = Math.abs(clat) + deg + 1 >= 89 ? 180
+                   : Math.min(180, Math.asin(Math.min(1, Math.sin(reach) / Math.cos(clat * D))) / D + 2)
+        // a cell only gets as many places as could ever be labelled in it at this size
+        // on screen: its busiest ones
+        const cellPx = R * D
+        const perCell = Math.max(2, Math.ceil(cellPx * cellPx / 400) + 1)
+        const out = []
+        for (let iy = lat0 + 90; iy <= lat1 + 90; iy++) {
+            const la = (iy - 90 + 0.5) * D, cl = Math.cos(la), sl = Math.sin(la)
+            const first = Math.floor(clng - span), last = Math.floor(clng + span)
+            for (let lo = first; lo <= Math.min(last, first + 359); lo++) {
+                const ix = ((lo + 180) % 360 + 360) % 360
+                const c = iy * ci.cols + ix
+                const a = ci.start[c], b = ci.start[c + 1]
+                if (a === b) continue
+                const lc = (ix - 180 + 0.5) * D
+                if (cl * Math.sin(lc) * cv.x + sl * cv.y + cl * Math.cos(lc) * cv.z < cosLim) continue
+                for (let k = a; k < Math.min(b, a + perCell); k++) out.push(ci.rows[k])
+            }
         }
-        return { cells: cells, vx: vx, vy: vy, vz: vz }
+        out.sort((m, n) => m - n)
+        return out
     }
 
     // tooltip for one of your pins, long visit lists trimmed to the latest few
