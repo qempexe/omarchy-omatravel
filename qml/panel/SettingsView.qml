@@ -37,7 +37,7 @@ Item {
     readonly property color inkOnFg: (0.299 * accent.r + 0.587 * accent.g + 0.114 * accent.b) > 0.55
         ? Qt.rgba(0.07, 0.07, 0.09, 1) : Qt.rgba(0.97, 0.97, 0.98, 1)
     readonly property color panelSolid: Qt.rgba(panelBg.r, panelBg.g, panelBg.b, 1)
-    readonly property bool lightPanel: (0.299 * panelBg.r + 0.587 * panelBg.g + 0.114 * panelBg.b) > 0.55
+    property bool lightPanel: false           // a light background: the dark logo on About
     function tint(a) { return Qt.rgba(ink.r, ink.g, ink.b, a) }
     function accentTint(a) { return Qt.rgba(accent.r, accent.g, accent.b, a) }
 

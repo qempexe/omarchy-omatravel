@@ -52,8 +52,29 @@ Panel {
     // nothing here depends on `detached`, so both look the same
     readonly property bool useBarColors: !tm || (tm.activeTheme === "auto" && tm.systemTheme === null)
     readonly property bool followSystem: !!tm && tm.activeTheme === "auto" && tm.systemTheme !== null
-    readonly property color fg: useBarColors && root.barForeground !== undefined
+    // the text color: the theme's, made darker or lighter (keeping its hue) when it
+    // would be hard to read on the background, like light text on a light custom one
+    readonly property color themeFg: useBarColors && root.barForeground !== undefined
         ? root.barForeground : (tm ? tm.themeText : "#e8dcc8")
+    readonly property color fg: readable(themeFg, baseBg)
+    readonly property bool lightPanel: luminance(baseBg) > 0.4
+    function luminance(c) {
+        function f(v) { return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4) }
+        return 0.2126 * f(c.r) + 0.7152 * f(c.g) + 0.0722 * f(c.b)
+    }
+    function contrast(a, b) {
+        var x = luminance(a), y = luminance(b)
+        return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05)
+    }
+    function readable(c, on) {
+        if (contrast(c, on) >= 4.5) return c
+        var to = luminance(on) > 0.4 ? 0 : 1
+        for (var t = 0.1; t < 1; t += 0.1) {
+            var m = Qt.rgba(c.r + (to - c.r) * t, c.g + (to - c.g) * t, c.b + (to - c.b) * t, 1)
+            if (contrast(m, on) >= 4.5) return m
+        }
+        return Qt.rgba(to, to, to, 1)
+    }
     readonly property color baseBg: {
         if (useBarColors && root.barBackground !== undefined) {
             var c = root.barBackground
@@ -357,15 +378,14 @@ Panel {
                     border.color: Qt.rgba(root.fg.r, root.fg.g, root.fg.b, 0.08)
                 }
 
-                Image {                              // the logo, light on a dark panel, dark on a light one
+                Image {                              // the logo: dark on a light panel, light on a dark one
                     id: avatar
                     anchors.left: parent.left
                     anchors.leftMargin: root.gutter + Style.space(12)
                     anchors.verticalCenter: parent.verticalCenter
                     width: Style.space(34)
                     height: width
-                    source: Qt.resolvedUrl((0.299 * root.fg.r + 0.587 * root.fg.g + 0.114 * root.fg.b) > 0.5
-                                           ? "../../assets/logo.png" : "../../assets/logo-dark.png")
+                    source: Qt.resolvedUrl(root.lightPanel ? "../../assets/logo-dark.png" : "../../assets/logo.png")
                     sourceSize.width: 96
                     sourceSize.height: 96
                     smooth: true
@@ -1379,6 +1399,7 @@ Panel {
                             filter: root.currentTab === "look" ? root.query : ""
                             fsMain: root.fsMain
                             fsSub: root.fsSub
+                            lightPanel: root.lightPanel
                             store: root.tm ? root.tm.settings : null
                             readSetting: function(key, fallback) {
                                 return root.hostWidget ? root.hostWidget.setting(key, fallback) : fallback
