@@ -585,12 +585,17 @@ Item {
 
     // process that gets its content on stdin, not argv (see _writePrivate).
     // writes the payload, drops its copy, closes stdin so cat sees EOF
+    // Process takes no child objects, so the deadline is a property, not a child Timer
     component StdinWriter: Process {
+        id: writer
         property string payload: ""
         property bool timedOut: false
+        property Timer deadline: Timer {
+            interval: 5000
+            onTriggered: if (writer.running) { writer.timedOut = true; writer.signal(15) }
+        }
         stdinEnabled: false
         onRunningChanged: if (running) { timedOut = false; deadline.start() } else deadline.stop()
-        Timer { id: deadline; interval: 5000; onTriggered: if (parent.running) { parent.timedOut = true; parent.signal(15) } }
         onStarted: {
             write(payload)
             payload = ""
