@@ -15,6 +15,8 @@ Item {
 
     property var values: ({})
     property bool loaded: false
+    property bool dirReady: false
+    property bool dirFailed: false
 
     // edits made before settings.json is read. merged over the file once it loads,
     // so an early write can't replace the saved settings with an almost empty file
@@ -77,6 +79,7 @@ Item {
 
     // first change goes out right away (a click is never lost), a burst after it once at the end
     function persist() {
+        if (dirFailed) return
         dirty = true
         if (!loaded) return              // written right after the file is read
         if (Date.now() - lastWrite > 300) writeNow()
@@ -84,6 +87,7 @@ Item {
     }
 
     function writeNow() {
+        if (dirFailed || !dirReady) return
         if (!dirty) return
         dirty = false
         lastWrite = Date.now()
@@ -139,21 +143,29 @@ Item {
         }
     }
 
-    Component.onCompleted: mkdir.running = true
+    Component.onCompleted: { mkdir.running = true; dirTimer.start() }
     Component.onDestruction: writeNow()
 
     Process {
         id: mkdir
-        command: ["sh", "-c", 'umask 077; mkdir -p "$1" && chmod 700 "$1"', "sh", root.stateDir]
-        onExited: file.reload()
+        command: ["setsid", "sh", "-c", "trap 'trap \"\" TERM; kill -TERM -- -$$; sleep 1; kill -KILL -- -$$' TERM; umask 077; mkdir -p \"$1\" & wait $!; code=$?; if [ \"$code\" -eq 0 ]; then chmod 700 \"$1\" & wait $!; code=$?; fi; exit \"$code\"", "sh", root.stateDir]
+        onExited: function(code, status) {
+            dirTimer.stop()
+            var ok = code === 0 && status === 0
+            root.dirFailed = !ok
+            root.dirReady = ok
+            if (ok) file.reload()
+            else { root.dirty = false; if (!root.loaded) { root.loaded = true; root.changed() } }
+        }
     }
 
+    Timer { id: dirTimer; interval: 5000; onTriggered: if (mkdir.running) mkdir.signal(15) }
     Timer { id: echoTimer; interval: 1500; onTriggered: root.recent = [] }
     Timer { id: writeTimer; interval: 250; onTriggered: root.writeNow() }
 
     FileView {
         id: file
-        path: root.path
+        path: root.dirReady && !root.dirFailed ? root.path : ""
         watchChanges: true
         onFileChanged: reload()
         // text is a function on FileView, so call it. passing `text` gave absorb() the function

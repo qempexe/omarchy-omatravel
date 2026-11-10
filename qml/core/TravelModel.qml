@@ -24,6 +24,12 @@ Item {
     readonly property string storePath: dataDir + "/travel-data.json"
     readonly property string configHome: Quickshell.env("XDG_CONFIG_HOME") || (Quickshell.env("HOME") + "/.config")
     property bool storeReady: false
+    property bool storeFailed: false
+
+    // Run shell helpers in their own process group. The wrapper trap forwards TERM
+    // to descendants and escalates to KILL after a short grace period.
+    readonly property string _groupRunner: "trap 'trap \"\" TERM; kill -TERM -- -$$; sleep 1; kill -KILL -- -$$' TERM; \"$@\" & child=$!; wait \"$child\""
+    function _bounded(command) { return ["setsid", "sh", "-c", _groupRunner, "sh"].concat(command) }
 
     // settings: panel edits win, then the shell's setting() (fallbacks), then the default
     property var settings: null
@@ -159,10 +165,12 @@ Item {
 
     function _writePrivate(proc, dir, file, text) {
         proc.running = false
-        proc.command = ["sh", "-c", root._privateWriteScript, "sh", dir, file]
+        if (!root.storeReady || root.storeFailed) return false
+        proc.command = root._bounded(["sh", "-c", root._privateWriteScript, "sh", dir, file])
         proc.payload = text
         proc.stdinEnabled = true
         proc.running = true
+        return true
     }
 
     // saving
@@ -174,6 +182,7 @@ Item {
     }
 
     function _write(obj) {
+        if (!storeReady || storeFailed) return
         var text = JSON.stringify(obj, null, 2)
         root._lastText = text
         if (typeof storeFile.setText === "function") {
@@ -318,6 +327,7 @@ Item {
     // export
     // writes the active profile to <data dir>/exports/. kind = csv | json
     function exportData(kind) {
+        if (!storeReady || storeFailed) { _say("Travel data storage is unavailable."); return }
         var stamp = new Date().toISOString().slice(0, 10)
         var text = kind === "json" ? Model.toJson(store, stamp) : Model.toCsv(store, allPoints)
         var file = dataDir + "/exports/omatravel-" + Model.fileSafe(store.activeProfile)
@@ -435,7 +445,7 @@ Item {
     // files
     FileView {
         id: storeFile
-        path: root.storeReady ? root.storePath : ""
+        path: root.storeReady && !root.storeFailed ? root.storePath : ""
         watchChanges: true
         onFileChanged: reload()
         onLoaded: {
@@ -444,7 +454,7 @@ Item {
             root._lastText = t
             root.store = Model.parseStore(t)
         }
-        onLoadFailed: root._write(root.store)      // first run: create the file
+        onLoadFailed: if (root.storeReady && !root.storeFailed) root._write(root.store) // first run: create the file
     }
 
     // live omarchy theme
@@ -454,12 +464,12 @@ Item {
     // follow omarchy, and on a slow poll while following
     readonly property string omarchyDir: configHome + "/omarchy/current"
     function _h2(v) { return ("0" + Math.round(v * 255).toString(16)).slice(-2) }
-    function refreshSystemTheme() { if (!themeReader.running) themeReader.running = true }
+    function refreshSystemTheme() { if (!themeReader.running) { themeReader.running = true; themeTimer.start() } }
 
     // dump the active theme's files (current/theme, else the named theme's folder)
     Process {
         id: themeReader
-        command: ["sh", "-c", [
+        command: root._bounded(["sh", "-c", [
             'd="$1"; cfg="$2"',
             'data="${XDG_DATA_HOME:-$HOME/.local/share}"; state="${XDG_STATE_HOME:-$HOME/.local/state}"',
             '# 1. find the folder that holds the active theme (layout differs between Omarchy versions)',
@@ -499,8 +509,11 @@ Item {
             '  echo "@@DIAG found: $(find "$HOME/.config/omarchy" "$HOME/.local/share/omarchy" "$HOME/.local/state/omarchy" -maxdepth 4 -name theme.name 2>/dev/null | head -3 | tr "\\n" " ")"',
             'fi',
             'exit 0'].join("\n"),
-            "sh", root.omarchyDir, root.configHome]
-        onExited: function(code) { if (code !== 0) root.themeDebug = "reader exited with code " + code }
+            "sh", root.omarchyDir, root.configHome])
+        onExited: function(code, status) {
+            themeTimer.stop()
+            if (code !== 0 || status !== 0) root.themeDebug = "reader failed (exit " + code + ")"
+        }
         stdout: StdioCollector {
             onStreamFinished: {
                 root.themeDebug = text.length
@@ -530,6 +543,7 @@ Item {
             }
         }
     }
+    Timer { id: themeTimer; interval: 5000; onTriggered: if (themeReader.running) themeReader.signal(15) }
     FileView {
         id: omarchyName
         path: root.omarchyDir + "/theme.name"
@@ -573,7 +587,10 @@ Item {
     // writes the payload, drops its copy, closes stdin so cat sees EOF
     component StdinWriter: Process {
         property string payload: ""
+        property bool timedOut: false
         stdinEnabled: false
+        onRunningChanged: if (running) { timedOut = false; deadline.start() } else deadline.stop()
+        Timer { id: deadline; interval: 5000; onTriggered: if (parent.running) { parent.timedOut = true; parent.signal(15) } }
         onStarted: {
             write(payload)
             payload = ""
@@ -585,18 +602,33 @@ Item {
     // make the data dir, copy an old in-plugin save across once, then open the store
     Process {
         id: ensureDir
-        command: ["sh", "-c",
+        command: root._bounded(["sh", "-c",
             // travel history is personal: owner-only dirs and file, also ones from older builds
-            "umask 077; mkdir -p \"$1\" && chmod 700 \"$1\" && { [ -f \"$2\" ] || { [ -f \"$3\" ] && cp \"$3\" \"$2\"; }; }; " +
-            "[ -f \"$2\" ] && chmod 600 \"$2\"; [ -d \"$1/exports\" ] && chmod 700 \"$1/exports\"; true",
-            "sh", root.dataDir, root.storePath, root.legacyStorePath]
+            "umask 077; mkdir -p \"$1\" || exit $?; chmod 700 \"$1\" || exit $?; " +
+            "if [ ! -f \"$2\" ] && [ -f \"$3\" ]; then cp \"$3\" \"$2\" || exit $?; fi; " +
+            "if [ -f \"$2\" ]; then chmod 600 \"$2\" || exit $?; fi; " +
+            "if [ -d \"$1/exports\" ]; then chmod 700 \"$1/exports\" || exit $?; fi; exit 0",
+            "sh", root.dataDir, root.storePath, root.legacyStorePath])
         running: true
-        onExited: root.storeReady = true
+        onRunningChanged: if (running) ensureDirTimer.start(); else ensureDirTimer.stop()
+        onExited: function(code, status) {
+            ensureDirTimer.stop()
+            var ok = code === 0 && status === 0
+            root.storeFailed = !ok
+            root.storeReady = ok
+        }
     }
+    Timer { id: ensureDirTimer; interval: 5000; running: ensureDir.running; onTriggered: if (ensureDir.running) ensureDir.signal(15) }
     StdinWriter { id: fallbackWriter }
     // setText writes with the default umask and may recreate the file.
     // the 0700 dir already keeps others out, this puts the file back to 0600 after each save
-    Process { id: permFixer; command: ["chmod", "600", root.storePath] }
+    Process {
+        id: permFixer
+        command: root._bounded(["chmod", "600", root.storePath])
+        onRunningChanged: if (running) permFixerDeadline.start(); else permFixerDeadline.stop()
+        onExited: permFixerDeadline.stop()
+    }
+    Timer { id: permFixerDeadline; interval: 5000; onTriggered: if (permFixer.running) permFixer.signal(15) }
     Timer {
         id: permTimer
         interval: 400
