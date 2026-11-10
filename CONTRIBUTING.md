@@ -34,9 +34,10 @@ keeps to:
 ```bash
 python3 tests/test_manifest.py   # settings, manifest and files agree, plain text, no native inputs
 node tests/test_globe.js         # the globe never leaves out a place that is on screen
+node tests/test_process_children.js   # no helper process declares a child object
 ```
 
-Run both before you open a pull request.
+Run them before you open a pull request.
 
 ## Commits
 
