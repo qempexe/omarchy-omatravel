@@ -4,6 +4,14 @@ All notable changes to Omatravel. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.3.2] - 2026-11-10
+
+### Fixed
+
+- Theme, setup, export and persistence helpers now have hard deadlines and clean up
+  their child processes. Failed setup leaves storage unavailable instead of allowing
+  writes to a directory that was not secured.
+
 ## [1.3.1] - 2026-11-05
 
 ### Fixed
@@ -78,6 +86,7 @@ All notable changes to Omatravel. The format follows
 - First release: an interactive globe widget for the Omarchy bar.
 
 [1.3.1]: https://github.com/qempexe/omarchy-omatravel/compare/v1.3.0...v1.3.1
+[1.3.2]: https://github.com/qempexe/omarchy-omatravel/compare/v1.3.1...v1.3.2
 [1.3.0]: https://github.com/qempexe/omarchy-omatravel/compare/v1.2.1...v1.3.0
 [1.2.1]: https://github.com/qempexe/omarchy-omatravel/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/qempexe/omarchy-omatravel/compare/v1.1.0...v1.2.0
