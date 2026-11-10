@@ -4,6 +4,14 @@ All notable changes to Omatravel. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.3.3] - 2026-11-10
+
+### Fixed
+
+- The bar widget didn't load in 1.3.2, so Omatravel was missing from the bar. The
+  export and fallback save helpers declared their time limit in a way the shell
+  rejects; it is now set up the way the shell accepts.
+
 ## [1.3.2] - 2026-11-10
 
 ### Fixed
@@ -85,6 +93,7 @@ All notable changes to Omatravel. The format follows
 
 - First release: an interactive globe widget for the Omarchy bar.
 
+[1.3.3]: https://github.com/qempexe/omarchy-omatravel/compare/v1.3.2...v1.3.3
 [1.3.1]: https://github.com/qempexe/omarchy-omatravel/compare/v1.3.0...v1.3.1
 [1.3.2]: https://github.com/qempexe/omarchy-omatravel/compare/v1.3.1...v1.3.2
 [1.3.0]: https://github.com/qempexe/omarchy-omatravel/compare/v1.2.1...v1.3.0
