@@ -4,6 +4,17 @@ All notable changes to Omatravel. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.3.4] - 2026-11-11
+
+### Fixed
+
+- An export wrote an empty file and still said "Exported" since 1.3.2: the helper that
+  bounds every process started the writer in the background, where the shell gives it
+  nothing to read. The content now reaches it. The same helper is the fallback save on
+  an old Quickshell, where it would have emptied the travel history.
+- The write helper never replaces a file with an empty one: it fails and leaves the
+  file as it was.
+
 ## [1.3.3] - 2026-11-10
 
 ### Fixed
@@ -93,6 +104,7 @@ All notable changes to Omatravel. The format follows
 
 - First release: an interactive globe widget for the Omarchy bar.
 
+[1.3.4]: https://github.com/qempexe/omarchy-omatravel/compare/v1.3.3...v1.3.4
 [1.3.3]: https://github.com/qempexe/omarchy-omatravel/compare/v1.3.2...v1.3.3
 [1.3.1]: https://github.com/qempexe/omarchy-omatravel/compare/v1.3.0...v1.3.1
 [1.3.2]: https://github.com/qempexe/omarchy-omatravel/compare/v1.3.1...v1.3.2
