@@ -160,7 +160,8 @@ Item {
         'umask 077',
         'mkdir -p "$1" && chmod 700 "$1" || exit 1',
         'tmp=$(mktemp "$1/.omatravel.XXXXXX") || exit 1',
-        'if cat > "$tmp" && chmod 600 "$tmp" && mv -f "$tmp" "$2"; then exit 0; fi',
+        // an empty result is never a save or an export: keep what is there
+        'if cat > "$tmp" && [ -s "$tmp" ] && chmod 600 "$tmp" && mv -f "$tmp" "$2"; then exit 0; fi',
         'rm -f "$tmp"',
         'exit 1'].join("\n")
 
