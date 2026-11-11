@@ -28,7 +28,8 @@ Item {
 
     // Run shell helpers in their own process group. The wrapper trap forwards TERM
     // to descendants and escalates to KILL after a short grace period.
-    readonly property string _groupRunner: "trap 'trap \"\" TERM; kill -TERM -- -$$; sleep 1; kill -KILL -- -$$' TERM; \"$@\" & child=$!; wait \"$child\""
+    // sh gives a background command /dev/null to read, so the helper's own stdin is handed over on fd 3
+    readonly property string _groupRunner: "trap 'trap \"\" TERM; kill -TERM -- -$$; sleep 1; kill -KILL -- -$$' TERM; exec 3<&0; \"$@\" <&3 3<&- & child=$!; exec 3<&-; wait \"$child\""
     function _bounded(command) { return ["setsid", "sh", "-c", _groupRunner, "sh"].concat(command) }
 
     // settings: panel edits win, then the shell's setting() (fallbacks), then the default
