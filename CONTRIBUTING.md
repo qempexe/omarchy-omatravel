@@ -35,6 +35,7 @@ keeps to:
 python3 tests/test_manifest.py   # settings, manifest and files agree, plain text, no native inputs
 node tests/test_globe.js         # the globe never leaves out a place that is on screen
 node tests/test_process_children.js   # no helper process declares a child object
+node tests/test_process_stdin.js      # the write helper saves exactly what it was sent
 ```
 
 Run them before you open a pull request.
